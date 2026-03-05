@@ -20,9 +20,11 @@ RUN apk add --no-cache \
     npm \
     && rm -rf /var/cache/apk/*
 
-# Install Frida tools
-RUN pip3 install --no-cache-dir --break-system-packages \
-    frida-tools
+# Install Frida tools (needs build deps to compile on Alpine aarch64)
+RUN apk add --no-cache --virtual .build-deps \
+        python3-dev gcc g++ musl-dev libffi-dev make \
+    && pip3 install --no-cache-dir --break-system-packages frida-tools \
+    && apk del .build-deps
 
 # Create app directory
 WORKDIR /app

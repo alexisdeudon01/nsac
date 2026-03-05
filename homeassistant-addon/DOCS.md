@@ -23,7 +23,7 @@
 
 ## Pre-requis
 
-- Raspberry Pi 4 (4GB+ RAM recommande)
+- Raspberry Pi 4 ou Pi 5 (4GB+ RAM recommande)
 - Home Assistant OS ou Supervised
 - Appareil Android connecte via ADB (USB ou WiFi)
 - Pour le bypass SSL : appareil roote
