@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 #
 # setup_audit.sh - Deploiement du lab d'audit Android
-# Usage: sudo ./setup_audit.sh [--monitor] [--transparent]
+# Usage: sudo ./setup_audit.sh [--monitor] [--transparent] [--mon-iface wlan1] [--net-iface wlan0]
 #
 # Options:
-#   --monitor      Active le mode monitor WiFi (airmon-ng)
-#   --transparent  Active la redirection transparente iptables vers mitmproxy
+#   --monitor              Active le mode monitor WiFi (airmon-ng)
+#   --transparent          Active la redirection transparente iptables vers mitmproxy
+#   --mon-iface <iface>    Interface WiFi pour le mode monitor (ex: wlan1)
+#   --net-iface <iface>    Interface WiFi pour la connexion internet (ex: wlan0)
+#
+# Si non specifiees, le script detecte automatiquement les 2 interfaces WiFi.
+# La premiere reste en mode managed (internet), la seconde passe en monitor.
 #
 set -euo pipefail
 
 MITMPROXY_PORT=8080
-WIFI_IFACE=""
+MON_IFACE_USER=""
+NET_IFACE_USER=""
 
 # --- Couleurs ---
 RED='\033[0;31m'
@@ -47,12 +53,15 @@ check_deps
 ENABLE_MONITOR=false
 ENABLE_TRANSPARENT=false
 
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --monitor)     ENABLE_MONITOR=true ;;
         --transparent) ENABLE_TRANSPARENT=true ;;
-        *)             log_warn "Option inconnue : $arg" ;;
+        --mon-iface)   MON_IFACE_USER="$2"; shift ;;
+        --net-iface)   NET_IFACE_USER="$2"; shift ;;
+        *)             log_warn "Option inconnue : $1" ;;
     esac
+    shift
 done
 
 # --- IP Forwarding ---
@@ -99,34 +108,138 @@ else
     log_warn "Lancez mitmproxy une premiere fois pour le generer, puis relancez ce script."
 fi
 
+# --- Detection des interfaces WiFi ---
+detect_wifi_interfaces() {
+    local all_ifaces=()
+    while IFS= read -r line; do
+        all_ifaces+=("$line")
+    done < <(iw dev | awk '$1=="Interface"{print $2}')
+
+    echo "${all_ifaces[@]}"
+}
+
 # --- Mode Monitor WiFi (optionnel) ---
+NET_IFACE=""
+MON_IFACE=""
+
 if $ENABLE_MONITOR; then
     if ! command -v airmon-ng &>/dev/null; then
         log_error "airmon-ng non installe. Installez aircrack-ng."
         exit 1
     fi
 
-    WIFI_IFACE=$(iw dev | awk '$1=="Interface"{print $2; exit}')
-    if [[ -z "$WIFI_IFACE" ]]; then
-        log_error "Aucune interface WiFi detectee."
+    # Recuperer toutes les interfaces WiFi
+    WIFI_IFACES=($(detect_wifi_interfaces))
+    WIFI_COUNT=${#WIFI_IFACES[@]}
+
+    log_info "Interfaces WiFi detectees ($WIFI_COUNT) : ${WIFI_IFACES[*]}"
+
+    if [[ $WIFI_COUNT -lt 2 ]] && [[ -z "$MON_IFACE_USER" || -z "$NET_IFACE_USER" ]]; then
+        log_error "2 interfaces WiFi requises (trouvees: $WIFI_COUNT)."
+        log_error "Connectez un adaptateur WiFi USB ou specifiez manuellement :"
+        log_error "  --mon-iface wlan1 --net-iface wlan0"
         exit 1
     fi
 
-    log_info "Interface WiFi detectee : $WIFI_IFACE"
-    log_warn "Passage en mode monitor (la connexion WiFi sera interrompue)..."
-    airmon-ng check kill
-    airmon-ng start "$WIFI_IFACE"
-
-    MON_IFACE="${WIFI_IFACE}mon"
-    if iw dev | grep -q "$MON_IFACE"; then
-        log_info "Mode monitor actif sur $MON_IFACE"
-        log_info "Pour scanner les probe requests :"
-        echo "    airodump-ng $MON_IFACE"
+    # Attribution des interfaces
+    if [[ -n "$NET_IFACE_USER" && -n "$MON_IFACE_USER" ]]; then
+        # Mode manuel : l'utilisateur a specifie les 2
+        NET_IFACE="$NET_IFACE_USER"
+        MON_IFACE="$MON_IFACE_USER"
+        log_info "Interfaces specifiees manuellement :"
     else
-        log_error "Echec du passage en mode monitor."
+        # Mode auto : la premiere reste en managed, la seconde passe en monitor
+        NET_IFACE="${WIFI_IFACES[0]}"
+        MON_IFACE="${WIFI_IFACES[1]}"
+        log_info "Attribution automatique des interfaces :"
     fi
+
+    log_info "  Internet (managed) : $NET_IFACE"
+    log_info "  Monitor (sniffing) : $MON_IFACE"
+
+    # Verifier que les 2 interfaces existent
+    if ! iw dev | grep -q "$NET_IFACE"; then
+        log_error "Interface $NET_IFACE introuvable."
+        exit 1
+    fi
+    if ! iw dev | grep -q "$MON_IFACE"; then
+        log_error "Interface $MON_IFACE introuvable."
+        exit 1
+    fi
+
+    # Verifier que l'interface reseau est connectee
+    if ip link show "$NET_IFACE" | grep -q "state UP"; then
+        log_info "$NET_IFACE est UP et connectee."
+    else
+        log_warn "$NET_IFACE n'est pas UP. Tentative de connexion..."
+        ip link set "$NET_IFACE" up 2>/dev/null || true
+    fi
+
+    # Passer UNIQUEMENT l'interface monitor en mode monitor
+    # On ne touche PAS a l'interface reseau
+    log_info "Passage de $MON_IFACE en mode monitor..."
+    log_info "$NET_IFACE reste en mode managed (internet actif)."
+
+    # Tuer les processus qui bloquent SEULEMENT sur l'interface monitor
+    # On utilise airmon-ng check kill avec precaution
+    # D'abord on sauvegarde l'etat de NetworkManager pour l'interface reseau
+    NMCLI_AVAILABLE=false
+    if command -v nmcli &>/dev/null; then
+        NMCLI_AVAILABLE=true
+        # Marquer l'interface reseau comme non-geree temporairement par airmon
+        NET_CONNECTION=$(nmcli -t -f NAME,DEVICE con show --active | grep "$NET_IFACE" | cut -d: -f1)
+    fi
+
+    # Desactiver l'interface monitor avant airmon-ng
+    ip link set "$MON_IFACE" down 2>/dev/null || true
+
+    # Passer en mode monitor (sans kill pour preserver la connexion)
+    airmon-ng start "$MON_IFACE" 2>/dev/null
+
+    MON_IFACE_RESULT="${MON_IFACE}mon"
+    # Certains drivers gardent le meme nom
+    if iw dev | grep -q "$MON_IFACE_RESULT"; then
+        MON_IFACE="$MON_IFACE_RESULT"
+    fi
+
+    # Verifier le mode monitor
+    MON_MODE=$(iw dev "$MON_IFACE" info 2>/dev/null | grep "type" | awk '{print $2}')
+    if [[ "$MON_MODE" == "monitor" ]]; then
+        log_info "Mode monitor actif sur $MON_IFACE"
+    else
+        log_warn "Mode monitor peut ne pas etre actif sur $MON_IFACE (type: $MON_MODE)"
+        log_warn "Certains drivers necessitent : iw dev $MON_IFACE set type monitor"
+    fi
+
+    # S'assurer que l'interface reseau est toujours UP
+    ip link set "$NET_IFACE" up 2>/dev/null || true
+    if $NMCLI_AVAILABLE && [[ -n "${NET_CONNECTION:-}" ]]; then
+        nmcli con up "$NET_CONNECTION" 2>/dev/null || true
+    fi
+
+    # Verification finale de la connectivite internet
+    if ping -c 1 -W 2 -I "$NET_IFACE" 8.8.8.8 &>/dev/null; then
+        log_info "Connectivite internet OK via $NET_IFACE"
+    else
+        log_warn "Pas de connectivite internet via $NET_IFACE."
+        log_warn "Verifiez la connexion WiFi sur cette interface."
+    fi
+
+    echo ""
+    log_info "Pour scanner les probe requests :"
+    echo "    airodump-ng $MON_IFACE"
+    echo ""
+    log_info "Pour cibler un canal specifique :"
+    echo "    airodump-ng -c <channel> --bssid <AP_MAC> $MON_IFACE"
+    echo ""
+    log_info "Pour capturer le trafic :"
+    echo "    airodump-ng -c <channel> --bssid <AP_MAC> -w capture $MON_IFACE"
+
 else
     log_warn "Mode monitor desactive. Utilisez --monitor pour l'activer."
+
+    # Detecter l'interface reseau par defaut
+    NET_IFACE=$(ip route | awk '/default/{print $5; exit}')
 fi
 
 # --- Resume ---
@@ -135,4 +248,11 @@ log_info "====== Lab d'audit Android pret ======"
 echo "  MobSF          : http://127.0.0.1:8000"
 echo "  Mitmproxy Web  : http://127.0.0.1:8081"
 echo "  Mitmproxy Port : $MITMPROXY_PORT (proxy HTTP/HTTPS)"
+echo ""
+if [[ -n "$NET_IFACE" ]]; then
+    echo "  Interface reseau (internet) : $NET_IFACE"
+fi
+if [[ -n "$MON_IFACE" ]] && $ENABLE_MONITOR; then
+    echo "  Interface monitor (sniffing) : $MON_IFACE"
+fi
 echo ""
