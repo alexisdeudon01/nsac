@@ -56,6 +56,6 @@ map:
 # Docker-in-Docker
 docker_api: true
 
-# Ressources (Pi 4 minimum)
-resources_limits:
+# Ressources (Pi 4 / Pi 5)
+resources:
   memory: 2048
