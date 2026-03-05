@@ -1,0 +1,27 @@
+services:
+  mobsf:
+    image: opensecurity/mobile-security-framework-mobsf:latest
+    container_name: mobsf
+    ports:
+      - "127.0.0.1:8000:8000"       # Bind local uniquement (securite)
+    volumes:
+      - mobsf_data:/root/.MobSF
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mitmproxy:
+    image: mitmproxy/mitmproxy:latest
+    container_name: mitmproxy
+    network_mode: host
+    command: mitmweb --web-host 0.0.0.0 --web-port 8081 --listen-port 8080
+    volumes:
+      - mitmproxy_data:/home/mitmproxy/.mitmproxy
+    restart: unless-stopped
+
+volumes:
+  mobsf_data:
+  mitmproxy_data:
