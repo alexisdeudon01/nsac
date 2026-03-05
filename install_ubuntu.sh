@@ -4,7 +4,7 @@
 #
 # Usage: sudo ./install_ubuntu.sh
 #
-set -euo pipefail
+set -uo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -35,21 +35,34 @@ log_info "Repertoire  : $INSTALL_DIR"
 # --- 1. Mise a jour et paquets systeme ---
 log_info "Installation des paquets systeme..."
 apt-get update -qq
-apt-get install -y -qq \
-    python3 python3-pip python3-venv \
-    docker.io docker-compose-v2 \
-    adb \
-    iptables \
-    openssl \
-    curl \
-    iw wireless-tools \
-    aircrack-ng \
-    net-tools
+
+# Paquets essentiels (installes un par un pour eviter les conflits)
+ESSENTIAL_PKGS=(python3 python3-pip python3-venv iptables openssl curl net-tools)
+OPTIONAL_PKGS=(docker.io docker-compose-v2 adb iw wireless-tools aircrack-ng)
+
+for pkg in "${ESSENTIAL_PKGS[@]}"; do
+    apt-get install -y -qq "$pkg" 2>/dev/null || log_warn "Impossible d'installer $pkg (peut-etre deja present)"
+done
+
+for pkg in "${OPTIONAL_PKGS[@]}"; do
+    apt-get install -y -qq "$pkg" 2>/dev/null || log_warn "Paquet optionnel $pkg non installe (conflit ou indisponible)"
+done
+
+# Verifier que python3 est la
+if ! command -v python3 &>/dev/null; then
+    log_error "python3 est requis mais n'a pas pu etre installe."
+    exit 1
+fi
 
 # --- 2. Docker ---
 log_info "Configuration de Docker..."
-systemctl enable docker
-systemctl start docker
+if command -v docker &>/dev/null; then
+    systemctl enable docker 2>/dev/null || true
+    systemctl start docker 2>/dev/null || true
+else
+    log_warn "Docker non installe. MobSF et mitmproxy ne seront pas disponibles."
+    log_warn "Installe Docker manuellement : https://docs.docker.com/engine/install/ubuntu/"
+fi
 # Ajouter l'utilisateur au groupe docker
 if ! groups "$REAL_USER" | grep -q docker; then
     usermod -aG docker "$REAL_USER"
