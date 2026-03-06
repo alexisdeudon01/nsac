@@ -43,9 +43,15 @@ fi
 
 # --- Demarrer Docker si demande ---
 if $START_DOCKER; then
-    log_info "Demarrage des conteneurs Docker..."
     cd "$SCRIPT_DIR"
-    docker compose up -d 2>/dev/null || log_warn "Docker compose a echoue. Verifiez que Docker est lance."
+    # Arreter les conteneurs existants pour appliquer la config a jour
+    if docker compose ps -q 2>/dev/null | grep -q .; then
+        log_info "Arret des conteneurs existants..."
+        docker compose down 2>/dev/null || true
+    fi
+    log_info "Demarrage des conteneurs Docker..."
+    docker compose up -d --force-recreate 2>/dev/null || log_warn "Docker compose a echoue. Verifiez que Docker est lance."
+    log_info "Mitmproxy Web UI : http://localhost:8081/#/flows?token=nsac"
 fi
 
 # --- IP Forwarding ---
