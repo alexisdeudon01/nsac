@@ -34,6 +34,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 Dashboard
             </div>
+            <div class="nav-item" data-page="topology">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
+                Topologie
+            </div>
             <div class="nav-item" data-page="containers">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
                 Containers
@@ -70,6 +74,10 @@
 
         <div class="nav-section">
             <div class="nav-section-title">Systeme</div>
+            <div class="nav-item" data-page="config">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                Config
+            </div>
             <div class="nav-item" data-page="logs">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 Logs
@@ -178,6 +186,31 @@
                     <button class="btn btn-outline btn-sm" onclick="navigate('logs')">Voir tout</button>
                 </div>
                 <div class="console" id="log-console" style="max-height:200px;"></div>
+            </div>
+        </div>
+
+        <!-- TOPOLOGY -->
+        <div id="page-topology" class="page fade-in">
+            <h2 class="page-title">Topologie Reseau</h2>
+            <div class="btn-group" style="margin-bottom:16px;">
+                <button class="btn btn-outline" onclick="refreshTopology()">Rafraichir</button>
+            </div>
+            <div class="card" style="padding:0;overflow:hidden;">
+                <canvas id="topology-canvas" width="900" height="550" style="width:100%;height:550px;display:block;"></canvas>
+            </div>
+            <div id="topology-legend" class="grid grid-4" style="margin-top:16px;">
+                <div class="card" style="padding:12px;display:flex;align-items:center;gap:8px;">
+                    <span class="topo-legend-dot" style="background:var(--success);"></span> Healthy
+                </div>
+                <div class="card" style="padding:12px;display:flex;align-items:center;gap:8px;">
+                    <span class="topo-legend-dot" style="background:var(--danger);"></span> Erreur
+                </div>
+                <div class="card" style="padding:12px;display:flex;align-items:center;gap:8px;">
+                    <span class="topo-legend-dot" style="background:var(--warning);"></span> Warning / Intercepted
+                </div>
+                <div class="card" style="padding:12px;display:flex;align-items:center;gap:8px;">
+                    <span class="topo-legend-dot" style="background:#666;"></span> Inactive / Stopped
+                </div>
             </div>
         </div>
 
@@ -345,12 +378,93 @@ adb reboot</pre>
             </div>
         </div>
 
+        <!-- CONFIG -->
+        <div id="page-config" class="page fade-in">
+            <h2 class="page-title">Configuration</h2>
+
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">Mitmproxy</span>
+                    <div class="btn-group">
+                        <button class="btn btn-outline btn-sm" onclick="loadDefaultConfig()">Charger defaut</button>
+                        <button class="btn btn-primary btn-sm" onclick="saveConfig()">Sauvegarder</button>
+                    </div>
+                </div>
+                <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">
+                    Configuration du proxy mitmweb. Redemarrez le container mitmproxy apres modification.
+                </p>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label class="form-label">Listen Host</label>
+                        <input class="form-input" id="cfg-listen_host" value="0.0.0.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Listen Port</label>
+                        <input class="form-input" id="cfg-listen_port" type="number" value="8080">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Web Host</label>
+                        <input class="form-input" id="cfg-web_host" value="0.0.0.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Web Port</label>
+                        <input class="form-input" id="cfg-web_port" type="number" value="8081">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Web Password</label>
+                        <input class="form-input" id="cfg-web_password" value="nsac">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Stream Large Bodies</label>
+                        <input class="form-input" id="cfg-stream_large_bodies" value="5m">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Connection Strategy</label>
+                        <select class="form-select" id="cfg-connection_strategy">
+                            <option value="eager">eager</option>
+                            <option value="lazy" selected>lazy</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:24px;margin-top:8px;">
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-ssl_insecure"> SSL Insecure
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-upstream_cert" checked> Upstream Cert
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-http2" checked> HTTP/2
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-anticache"> Anti-Cache
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-anticomp"> Anti-Compression
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-showhost" checked> Show Host
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-web_open_browser"> Open Browser
+                    </label>
+                </div>
+            </div>
+            <div id="config-status" style="display:none;margin-top:8px;"></div>
+        </div>
+
         <!-- LOGS -->
         <div id="page-logs" class="page fade-in">
-            <h2 class="page-title">Journal d'evenements</h2>
+            <h2 class="page-title">Logs en direct</h2>
             <div class="btn-group" style="margin-bottom:16px;">
-                <button class="btn btn-outline" onclick="refreshLogs()">Rafraichir</button>
-                <button class="btn btn-danger btn-sm" onclick="document.getElementById('log-console').innerHTML=''">Effacer</button>
+                <button class="btn btn-outline btn-sm log-filter-btn active" data-filter="all" onclick="setLogFilter('all')">Tous</button>
+                <button class="btn btn-outline btn-sm log-filter-btn" data-filter="app" onclick="setLogFilter('app')">Application</button>
+                <button class="btn btn-outline btn-sm log-filter-btn" data-filter="mobsf" onclick="setLogFilter('mobsf')">MobSF</button>
+                <button class="btn btn-outline btn-sm log-filter-btn" data-filter="mitmproxy" onclick="setLogFilter('mitmproxy')">Mitmproxy</button>
+                <button class="btn btn-danger btn-sm" onclick="clearLogs()">Effacer</button>
+                <label style="display:flex;align-items:center;gap:6px;color:var(--text-secondary);font-size:13px;margin-left:auto;">
+                    <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+                </label>
             </div>
             <div class="console" id="log-console-full" style="max-height:600px;"></div>
         </div>
