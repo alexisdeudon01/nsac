@@ -34,10 +34,6 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 Dashboard
             </div>
-            <div class="nav-item" data-page="topology">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
-                Topologie
-            </div>
             <div class="nav-item" data-page="containers">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
                 Containers
@@ -179,6 +175,31 @@
                 </div>
             </div>
 
+            <!-- Topologie Reseau -->
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">Topologie Reseau</span>
+                    <button class="btn btn-outline btn-sm" onclick="refreshTopology()">Rafraichir</button>
+                </div>
+                <div style="padding:0;overflow:hidden;border-radius:8px;margin-top:8px;">
+                    <canvas id="topology-canvas" width="900" height="450" style="width:100%;height:450px;display:block;"></canvas>
+                </div>
+                <div class="grid grid-4" style="margin-top:12px;">
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span class="topo-legend-dot" style="background:var(--success);"></span> Healthy
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span class="topo-legend-dot" style="background:var(--danger);"></span> Erreur
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span class="topo-legend-dot" style="background:var(--warning);"></span> Warning
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span class="topo-legend-dot" style="background:#666;"></span> Inactive
+                    </div>
+                </div>
+            </div>
+
             <!-- Mini logs -->
             <div class="card">
                 <div class="card-header">
@@ -186,31 +207,6 @@
                     <button class="btn btn-outline btn-sm" onclick="navigate('logs')">Voir tout</button>
                 </div>
                 <div class="console" id="log-console" style="max-height:200px;"></div>
-            </div>
-        </div>
-
-        <!-- TOPOLOGY -->
-        <div id="page-topology" class="page fade-in">
-            <h2 class="page-title">Topologie Reseau</h2>
-            <div class="btn-group" style="margin-bottom:16px;">
-                <button class="btn btn-outline" onclick="refreshTopology()">Rafraichir</button>
-            </div>
-            <div class="card" style="padding:0;overflow:hidden;">
-                <canvas id="topology-canvas" width="900" height="550" style="width:100%;height:550px;display:block;"></canvas>
-            </div>
-            <div id="topology-legend" class="grid grid-4" style="margin-top:16px;">
-                <div class="card" style="padding:12px;display:flex;align-items:center;gap:8px;">
-                    <span class="topo-legend-dot" style="background:var(--success);"></span> Healthy
-                </div>
-                <div class="card" style="padding:12px;display:flex;align-items:center;gap:8px;">
-                    <span class="topo-legend-dot" style="background:var(--danger);"></span> Erreur
-                </div>
-                <div class="card" style="padding:12px;display:flex;align-items:center;gap:8px;">
-                    <span class="topo-legend-dot" style="background:var(--warning);"></span> Warning / Intercepted
-                </div>
-                <div class="card" style="padding:12px;display:flex;align-items:center;gap:8px;">
-                    <span class="topo-legend-dot" style="background:#666;"></span> Inactive / Stopped
-                </div>
             </div>
         </div>
 
@@ -409,10 +405,6 @@ adb reboot</pre>
                     <div class="form-group">
                         <label class="form-label">Web Port</label>
                         <input class="form-input" id="cfg-web_port" type="number" value="8081">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Web Password</label>
-                        <input class="form-input" id="cfg-web_password" value="nsac">
                     </div>
                     <div class="form-group">
                         <label class="form-label">Stream Large Bodies</label>

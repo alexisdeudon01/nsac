@@ -26,7 +26,6 @@ function navigate(pageId) {
         'devices': refreshDevices,
         'audit': refreshReports,
         'logs': refreshLogs,
-        'topology': refreshTopology,
         'config': loadConfig,
     };
     if (refreshMap[pageId]) refreshMap[pageId]();
@@ -78,6 +77,8 @@ async function refreshDashboard() {
     if (netStatus) {
         setToggle('toggle-proxy', netStatus.transparent_proxy);
     }
+
+    refreshTopology();
 }
 
 function updateServiceStatus(elementId, containers, name) {
@@ -309,7 +310,7 @@ async function uploadApk() {
 // =====================================================
 
 const CONFIG_FIELDS = {
-    text: ['listen_host', 'listen_port', 'web_host', 'web_port', 'web_password', 'stream_large_bodies'],
+    text: ['listen_host', 'listen_port', 'web_host', 'web_port', 'stream_large_bodies'],
     select: ['connection_strategy'],
     checkbox: ['ssl_insecure', 'upstream_cert', 'http2', 'anticache', 'anticomp', 'showhost', 'web_open_browser'],
 };
@@ -763,7 +764,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const activePage = document.querySelector('.page.active');
         if (activePage) {
             if (activePage.id === 'page-dashboard') refreshDashboard();
-            if (activePage.id === 'page-topology') refreshTopology();
         }
     }, 15000);
 

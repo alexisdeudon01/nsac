@@ -498,7 +498,6 @@ def get_default_mitmproxy_config():
         "web_host": "0.0.0.0",
         "web_port": 8081,
         "web_open_browser": False,
-        "web_password": "nsac",
         "ssl_insecure": True,
         "upstream_cert": True,
         "stream_large_bodies": "5m",
