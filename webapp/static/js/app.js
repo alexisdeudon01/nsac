@@ -20,6 +20,9 @@ function navigate(pageId) {
     if (page) page.classList.add('active');
     if (nav) nav.classList.add('active');
 
+    // Stop cartography live when leaving the page
+    if (pageId !== 'cartography') stopCartoLive();
+
     const refreshMap = {
         'dashboard': refreshDashboard,
         'containers': refreshContainers,
@@ -27,6 +30,7 @@ function navigate(pageId) {
         'audit': refreshReports,
         'logs': refreshLogs,
         'config': loadConfig,
+        'cartography': startCartoLive,
     };
     if (refreshMap[pageId]) refreshMap[pageId]();
 }
@@ -651,6 +655,405 @@ function drawTopology() {
 }
 
 // =====================================================
+// Cartography - Business Process Maps
+// =====================================================
+
+let cartoData = null;
+let cartoInterval = null;
+
+async function refreshCartography() {
+    cartoData = await api('/api/cartography');
+    if (!cartoData) return;
+    document.getElementById('carto-last-update').textContent =
+        'Maj: ' + new Date().toLocaleTimeString();
+    drawBP1();
+    drawBP2();
+    drawBP3();
+    drawBP4();
+}
+
+function startCartoLive() {
+    refreshCartography();
+    if (cartoInterval) clearInterval(cartoInterval);
+    cartoInterval = setInterval(refreshCartography, 5000);
+}
+
+function stopCartoLive() {
+    if (cartoInterval) { clearInterval(cartoInterval); cartoInterval = null; }
+}
+
+// --- Generic drawing helpers ---
+
+function initCartoCanvas(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#080c14';
+    ctx.fillRect(0, 0, rect.width, rect.height);
+    return { ctx, W: rect.width, H: rect.height };
+}
+
+const CARTO_COLORS = {
+    input: '#3b82f6',
+    process: '#06b6d4',
+    output: '#10b981',
+    warning: '#f59e0b',
+    error: '#ef4444',
+    inactive: '#555',
+    bg: '#131a28',
+    border: '#2a3a4e',
+    text: '#e2e8f0',
+    textDim: '#94a3b8',
+};
+
+function drawCartoNode(ctx, x, y, w, h, label, sublabel, type, status) {
+    const colors = {
+        input: CARTO_COLORS.input,
+        process: CARTO_COLORS.process,
+        output: CARTO_COLORS.output,
+    };
+    let borderColor = colors[type] || CARTO_COLORS.process;
+    if (status === 'error') borderColor = CARTO_COLORS.error;
+    else if (status === 'warning') borderColor = CARTO_COLORS.warning;
+    else if (status === 'inactive') borderColor = CARTO_COLORS.inactive;
+
+    // Glow for errors
+    if (status === 'error') {
+        ctx.shadowColor = 'rgba(239,68,68,0.4)';
+        ctx.shadowBlur = 16;
+    } else if (status === 'warning') {
+        ctx.shadowColor = 'rgba(245,158,11,0.3)';
+        ctx.shadowBlur = 10;
+    }
+
+    // Box
+    const r = 10;
+    ctx.beginPath();
+    ctx.roundRect(x - w/2, y - h/2, w, h, r);
+    ctx.fillStyle = CARTO_COLORS.bg;
+    ctx.fill();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Status indicator dot
+    const dotR = 5;
+    ctx.beginPath();
+    ctx.arc(x + w/2 - 12, y - h/2 + 12, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = borderColor;
+    ctx.fill();
+
+    // Type label top-left
+    ctx.font = 'bold 9px Inter, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = borderColor;
+    const typeLabels = { input: 'INPUT', process: 'PROCESS', output: 'OUTPUT' };
+    ctx.fillText(typeLabels[type] || 'NODE', x - w/2 + 10, y - h/2 + 6);
+
+    // Main label
+    ctx.font = 'bold 13px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = CARTO_COLORS.text;
+    ctx.fillText(label, x, y - 4);
+
+    // Sublabel
+    if (sublabel) {
+        ctx.font = '10px JetBrains Mono, monospace';
+        ctx.fillStyle = CARTO_COLORS.textDim;
+        ctx.fillText(sublabel, x, y + 14);
+    }
+}
+
+function drawCartoArrow(ctx, x1, y1, x2, y2, label, status) {
+    let color = CARTO_COLORS.border;
+    let dash = [];
+    if (status === 'active') color = CARTO_COLORS.process;
+    else if (status === 'error') { color = CARTO_COLORS.error; dash = [6, 4]; }
+    else if (status === 'warning') { color = CARTO_COLORS.warning; dash = [4, 3]; }
+    else if (status === 'success') color = CARTO_COLORS.output;
+
+    ctx.save();
+    ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrow head
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const aLen = 10;
+    ctx.beginPath();
+    ctx.fillStyle = color;
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - aLen * Math.cos(angle - 0.35), y2 - aLen * Math.sin(angle - 0.35));
+    ctx.lineTo(x2 - aLen * Math.cos(angle + 0.35), y2 - aLen * Math.sin(angle + 0.35));
+    ctx.closePath();
+    ctx.fill();
+
+    // Label
+    if (label) {
+        const mx = (x1 + x2) / 2;
+        const my = (y1 + y2) / 2 - 10;
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = color;
+        ctx.fillText(label, mx, my);
+    }
+    ctx.restore();
+}
+
+function drawCartoWarningBadge(ctx, x, y, count) {
+    if (!count) return;
+    ctx.beginPath();
+    ctx.arc(x, y, 11, 0, Math.PI * 2);
+    ctx.fillStyle = count > 5 ? CARTO_COLORS.error : CARTO_COLORS.warning;
+    ctx.fill();
+    ctx.font = 'bold 9px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#000';
+    ctx.fillText(count > 99 ? '99+' : String(count), x, y);
+}
+
+// --- BP1: Interception Reseau ---
+
+function drawBP1() {
+    const r = initCartoCanvas('carto-bp1');
+    if (!r) return;
+    const { ctx, W, H } = r;
+    const d = cartoData.bp1_network;
+    const nw = 130, nh = 60;
+    const cy = H / 2;
+
+    // Positions: Device -> WiFi -> Host(ipfwd) -> iptables -> Mitmproxy -> Internet
+    const nodes = [
+        { x: W*0.08, y: cy, label: 'Android Device', sub: d.device_count + ' connecte(s)', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive' },
+        { x: W*0.24, y: cy, label: 'WiFi AP', sub: d.wifi_ok ? 'Actif' : 'Non detecte', type: 'process', status: d.wifi_ok ? 'ok' : 'error' },
+        { x: W*0.40, y: cy, label: 'NSAC Host', sub: 'IP Forward: ' + (d.ip_forward ? 'ON' : 'OFF'), type: 'process', status: d.ip_forward ? 'ok' : 'warning' },
+        { x: W*0.56, y: cy, label: 'iptables NAT', sub: d.iptables_active ? 'PREROUTING :8080' : 'Inactif', type: 'process', status: d.iptables_active ? 'ok' : 'inactive' },
+        { x: W*0.72, y: cy, label: 'Mitmproxy', sub: d.flow_count + ' flows captures', type: 'process', status: d.mitmproxy_error ? 'error' : (d.mitmproxy_running ? 'ok' : 'inactive') },
+        { x: W*0.90, y: cy, label: 'Internet', sub: d.intercepted_hosts.slice(0,2).join(', ') || 'Aucun host', type: 'output', status: d.flow_count > 0 ? 'ok' : 'inactive' },
+    ];
+
+    // Arrows
+    for (let i = 0; i < nodes.length - 1; i++) {
+        const from = nodes[i], to = nodes[i + 1];
+        const labels = ['WiFi 802.11', 'Ethernet/Bridge', 'NAT Redirect', 'TCP :8080', 'HTTPS'];
+        const fromOk = from.status !== 'inactive' && from.status !== 'error';
+        const toOk = to.status !== 'inactive' && to.status !== 'error';
+        let arrowStatus = (fromOk && toOk) ? 'active' : (from.status === 'error' || to.status === 'error') ? 'error' : 'inactive';
+        drawCartoArrow(ctx, from.x + nw/2, from.y, to.x - nw/2, to.y, labels[i], arrowStatus);
+    }
+
+    // Nodes
+    for (const n of nodes) {
+        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status);
+    }
+
+    // Status badge
+    const bpOk = d.mitmproxy_running && d.iptables_active && d.wifi_ok;
+    const el = document.getElementById('bp1-status');
+    if (el) {
+        el.className = 'badge ' + (bpOk ? 'badge-success' : d.mitmproxy_error ? 'badge-danger' : 'badge-warning');
+        el.textContent = bpOk ? 'Operationnel' : d.mitmproxy_error ? 'Erreur' : 'Partiel';
+    }
+}
+
+// --- BP2: Analyse Statique MobSF ---
+
+function drawBP2() {
+    const r = initCartoCanvas('carto-bp2');
+    if (!r) return;
+    const { ctx, W, H } = r;
+    const d = cartoData.bp2_mobsf;
+    const nw = 140, nh = 60;
+    const cy = H / 2;
+
+    const nodes = [
+        { x: W*0.10, y: cy, label: 'APK / IPA File', sub: 'Upload utilisateur', type: 'input', status: 'ok' },
+        { x: W*0.28, y: cy, label: 'NSAC Upload', sub: 'POST /api/mobsf/upload', type: 'process', status: 'ok' },
+        { x: W*0.46, y: cy, label: 'MobSF Engine', sub: d.mobsf_running ? 'Running :8000' : 'Stopped', type: 'process', status: d.mobsf_error ? 'error' : (d.mobsf_running ? 'ok' : 'inactive') },
+        { x: W*0.64, y: cy, label: 'Static Analysis', sub: 'Decompile + Scan', type: 'process', status: d.mobsf_running ? 'ok' : 'inactive' },
+        { x: W*0.82, y: cy, label: 'Security Report', sub: d.report_count + ' rapport(s)', type: 'output', status: d.report_count > 0 ? 'ok' : 'inactive' },
+    ];
+
+    // Also show optional mitmproxy link for dynamic analysis
+    const mitmNode = { x: W*0.46, y: cy - 90, label: 'Mitmproxy', sub: 'Dynamic Analysis', type: 'process', status: d.mitmproxy_running ? 'ok' : 'inactive' };
+
+    // Main arrows
+    const labels = ['HTTP POST', 'REST API', 'Decompile + Rules', 'PDF / JSON'];
+    for (let i = 0; i < nodes.length - 1; i++) {
+        const fromOk = nodes[i].status !== 'inactive' && nodes[i].status !== 'error';
+        const toOk = nodes[i+1].status !== 'inactive' && nodes[i+1].status !== 'error';
+        drawCartoArrow(ctx, nodes[i].x + nw/2, nodes[i].y, nodes[i+1].x - nw/2, nodes[i+1].y, labels[i],
+            (fromOk && toOk) ? 'active' : nodes[i+1].status === 'error' ? 'error' : 'inactive');
+    }
+
+    // Mitmproxy link
+    drawCartoArrow(ctx, mitmNode.x, mitmNode.y + nh/2, nodes[2].x, nodes[2].y - nh/2, 'Traffic data', d.mitmproxy_running ? 'active' : 'inactive');
+
+    // Draw nodes
+    drawCartoNode(ctx, mitmNode.x, mitmNode.y, nw, nh, mitmNode.label, mitmNode.sub, mitmNode.type, mitmNode.status === 'ok' ? null : mitmNode.status);
+    for (const n of nodes) {
+        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status);
+    }
+    drawCartoWarningBadge(ctx, nodes[2].x + nw/2 - 4, nodes[2].y - nh/2 - 4, d.warnings);
+
+    const el = document.getElementById('bp2-status');
+    if (el) {
+        const ok = d.mobsf_running;
+        el.className = 'badge ' + (ok ? 'badge-success' : d.mobsf_error ? 'badge-danger' : 'badge-warning');
+        el.textContent = ok ? 'Operationnel' : d.mobsf_error ? 'Erreur' : 'MobSF Arrete';
+    }
+}
+
+// --- BP3: SSL Bypass Frida ---
+
+function drawBP3() {
+    const r = initCartoCanvas('carto-bp3');
+    if (!r) return;
+    const { ctx, W, H } = r;
+    const d = cartoData.bp3_frida;
+    const nw = 140, nh = 60;
+    const cy = H / 2;
+
+    const nodes = [
+        { x: W*0.08, y: cy, label: 'Android Target', sub: d.device_count + ' device(s)', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive' },
+        { x: W*0.24, y: cy, label: 'ADB Bridge', sub: 'USB / TCP', type: 'process', status: d.device_count > 0 ? 'ok' : 'inactive' },
+        { x: W*0.40, y: cy, label: 'Frida Server', sub: d.frida_active ? 'Actif (injecting)' : 'Inactif', type: 'process', status: d.frida_active ? 'ok' : 'inactive' },
+        { x: W*0.56, y: cy, label: 'SSL Hook', sub: 'SSLContext, OkHttp3', type: 'process', status: d.frida_active ? 'ok' : 'inactive' },
+        { x: W*0.72, y: cy, label: 'Unpinned Traffic', sub: 'Bypass active', type: 'output', status: d.frida_active ? 'ok' : 'inactive' },
+        { x: W*0.90, y: cy, label: 'Mitmproxy', sub: d.flow_count + ' flows', type: 'output', status: d.mitmproxy_running ? 'ok' : 'inactive' },
+    ];
+
+    // Frida hooks detail (sub-nodes below)
+    const hooks = [
+        { x: W*0.32, y: cy + 90, label: 'TrustManager', status: d.frida_active ? 'ok' : 'inactive' },
+        { x: W*0.46, y: cy + 90, label: 'Conscrypt', status: d.frida_active ? 'ok' : 'inactive' },
+        { x: W*0.60, y: cy + 90, label: 'WebView SSL', status: d.frida_active ? 'ok' : 'inactive' },
+    ];
+
+    // Main arrows
+    const labels = ['adb forward', 'frida -U -f', 'JS Injection', 'Cleartext', 'Intercepted'];
+    for (let i = 0; i < nodes.length - 1; i++) {
+        const fromOk = nodes[i].status !== 'inactive';
+        const toOk = nodes[i+1].status !== 'inactive';
+        drawCartoArrow(ctx, nodes[i].x + nw/2, nodes[i].y, nodes[i+1].x - nw/2, nodes[i+1].y, labels[i],
+            (fromOk && toOk) ? 'active' : 'inactive');
+    }
+
+    // Hook arrows
+    for (const hook of hooks) {
+        drawCartoArrow(ctx, nodes[3].x, nodes[3].y + nh/2, hook.x, hook.y - 20, '', hook.status === 'ok' ? 'success' : 'inactive');
+        // Mini hook node
+        ctx.beginPath();
+        ctx.roundRect(hook.x - 50, hook.y - 18, 100, 36, 6);
+        ctx.fillStyle = CARTO_COLORS.bg;
+        ctx.fill();
+        ctx.strokeStyle = hook.status === 'ok' ? CARTO_COLORS.output : CARTO_COLORS.inactive;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.font = '11px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = hook.status === 'ok' ? CARTO_COLORS.output : CARTO_COLORS.textDim;
+        ctx.fillText(hook.label, hook.x, hook.y);
+    }
+
+    // Main nodes
+    for (const n of nodes) {
+        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status);
+    }
+
+    const el = document.getElementById('bp3-status');
+    if (el) {
+        el.className = 'badge ' + (d.frida_active ? 'badge-success' : 'badge-warning');
+        el.textContent = d.frida_active ? 'Injection Active' : 'Inactif';
+    }
+}
+
+// --- BP4: Audit IPC ---
+
+function drawBP4() {
+    const r = initCartoCanvas('carto-bp4');
+    if (!r) return;
+    const { ctx, W, H } = r;
+    const d = cartoData.bp4_audit;
+    const nw = 140, nh = 60;
+    const cy = H * 0.4;
+
+    const nodes = [
+        { x: W*0.08, y: cy, label: 'Target Package', sub: 'com.example.app', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive' },
+        { x: W*0.26, y: cy, label: 'ADB Shell', sub: 'dumpsys + pm', type: 'process', status: d.device_count > 0 ? 'ok' : 'inactive' },
+        { x: W*0.44, y: cy, label: 'audit_ipc.sh', sub: 'Script analyse', type: 'process', status: 'ok' },
+        { x: W*0.62, y: cy, label: 'IPC Scanner', sub: 'Activity/Service/BR/CP', type: 'process', status: 'ok' },
+        { x: W*0.82, y: cy, label: 'Audit Report', sub: d.report_count + ' fichier(s)', type: 'output', status: d.report_count > 0 ? 'ok' : 'inactive' },
+    ];
+
+    // IPC component detail nodes
+    const ipcTypes = [
+        { x: W*0.32, y: cy + 90, label: 'Activities', icon: 'exported' },
+        { x: W*0.46, y: cy + 90, label: 'Services', icon: 'bound/started' },
+        { x: W*0.60, y: cy + 90, label: 'Broadcast Recv', icon: 'intent-filter' },
+        { x: W*0.74, y: cy + 90, label: 'Content Prov', icon: 'URI exposed' },
+    ];
+
+    // Main arrows
+    const labels = ['adb -s <serial>', 'Shell exec', 'Parse manifest', 'Generate'];
+    for (let i = 0; i < nodes.length - 1; i++) {
+        const fromOk = nodes[i].status !== 'inactive';
+        const toOk = nodes[i+1].status !== 'inactive';
+        drawCartoArrow(ctx, nodes[i].x + nw/2, nodes[i].y, nodes[i+1].x - nw/2, nodes[i+1].y, labels[i],
+            (fromOk && toOk) ? 'active' : 'inactive');
+    }
+
+    // IPC detail arrows and boxes
+    for (const ipc of ipcTypes) {
+        drawCartoArrow(ctx, nodes[3].x, nodes[3].y + nh/2, ipc.x, ipc.y - 22, '', 'active');
+        ctx.beginPath();
+        ctx.roundRect(ipc.x - 55, ipc.y - 20, 110, 40, 6);
+        ctx.fillStyle = CARTO_COLORS.bg;
+        ctx.fill();
+        ctx.strokeStyle = CARTO_COLORS.warning;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.font = 'bold 11px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = CARTO_COLORS.warning;
+        ctx.fillText(ipc.label, ipc.x, ipc.y - 4);
+        ctx.font = '9px JetBrains Mono, monospace';
+        ctx.fillStyle = CARTO_COLORS.textDim;
+        ctx.fillText(ipc.icon, ipc.x, ipc.y + 10);
+    }
+
+    // Main nodes
+    for (const n of nodes) {
+        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status);
+    }
+
+    // Error badge
+    drawCartoWarningBadge(ctx, nodes[4].x + nw/2 - 4, nodes[4].y - nh/2 - 4, d.recent_errors);
+
+    const el = document.getElementById('bp4-status');
+    if (el) {
+        el.className = 'badge ' + (d.report_count > 0 ? 'badge-success' : 'badge-warning');
+        el.textContent = d.report_count > 0 ? d.report_count + ' Rapports' : 'Aucun rapport';
+    }
+}
+
+// =====================================================
 // Cleanup
 // =====================================================
 
@@ -770,5 +1173,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle canvas resize
     window.addEventListener('resize', () => {
         if (topoData) drawTopology();
+        if (cartoData) { drawBP1(); drawBP2(); drawBP3(); drawBP4(); }
     });
 });

@@ -58,6 +58,10 @@
 
         <div class="nav-section">
             <div class="nav-section-title">Reseau</div>
+            <div class="nav-item" data-page="cartography">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                Cartographie
+            </div>
             <div class="nav-item" data-page="network">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
                 Reseau
@@ -459,6 +463,80 @@ adb reboot</pre>
                 </label>
             </div>
             <div class="console" id="log-console-full" style="max-height:600px;"></div>
+        </div>
+
+        <!-- CARTOGRAPHIE -->
+        <div id="page-cartography" class="page fade-in">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+                <h2 class="page-title" style="margin-bottom:0;">Cartographie des processus</h2>
+                <div class="btn-group">
+                    <button class="btn btn-primary btn-sm" onclick="refreshCartography()">Rafraichir Live</button>
+                    <span id="carto-last-update" style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;"></span>
+                </div>
+            </div>
+
+            <!-- Legende globale -->
+            <div class="card" style="margin-bottom:24px;padding:12px 20px;">
+                <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:center;">
+                    <span style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">Legende :</span>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--accent);"></span> Input</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--info);"></span> Processus</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--success);"></span> Output / OK</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--warning);"></span> Warning</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--danger);"></span> Erreur</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:#666;"></span> Inactif</div>
+                    <div class="carto-legend-item"><span style="display:inline-block;width:30px;height:3px;background:var(--accent);border-radius:2px;"></span> Flux donnees</div>
+                    <div class="carto-legend-item"><span style="display:inline-block;width:30px;height:3px;background:var(--danger);border-radius:2px;border:1px dashed var(--danger);"></span> Erreur lien</div>
+                </div>
+            </div>
+
+            <!-- BP1: Interception Reseau -->
+            <div class="card carto-card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">BP1 - Interception Reseau (Traffic Capture)</span>
+                    <span class="badge badge-info" id="bp1-status">-</span>
+                </div>
+                <p class="carto-desc">Capture du trafic reseau des appareils Android via WiFi AP, redirection iptables et interception mitmproxy.</p>
+                <div class="carto-canvas-wrap">
+                    <canvas id="carto-bp1" width="1200" height="320"></canvas>
+                </div>
+            </div>
+
+            <!-- BP2: Analyse Statique MobSF -->
+            <div class="card carto-card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">BP2 - Analyse Statique APK (MobSF Pipeline)</span>
+                    <span class="badge badge-info" id="bp2-status">-</span>
+                </div>
+                <p class="carto-desc">Pipeline d'analyse statique : upload APK vers MobSF, scan automatique, generation de rapports de securite.</p>
+                <div class="carto-canvas-wrap">
+                    <canvas id="carto-bp2" width="1200" height="320"></canvas>
+                </div>
+            </div>
+
+            <!-- BP3: SSL Bypass Frida -->
+            <div class="card carto-card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">BP3 - SSL Pinning Bypass (Frida Injection)</span>
+                    <span class="badge badge-info" id="bp3-status">-</span>
+                </div>
+                <p class="carto-desc">Injection Frida via ADB pour bypasser le SSL pinning : hook SSLContext, OkHttp3, TrustManager, Conscrypt.</p>
+                <div class="carto-canvas-wrap">
+                    <canvas id="carto-bp3" width="1200" height="320"></canvas>
+                </div>
+            </div>
+
+            <!-- BP4: Audit IPC -->
+            <div class="card carto-card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">BP4 - Audit IPC (Inter-Process Communication)</span>
+                    <span class="badge badge-info" id="bp4-status">-</span>
+                </div>
+                <p class="carto-desc">Audit des communications inter-processus Android : Activities, Services, BroadcastReceivers, ContentProviders exposes.</p>
+                <div class="carto-canvas-wrap">
+                    <canvas id="carto-bp4" width="1200" height="320"></canvas>
+                </div>
+            </div>
         </div>
 
     </main>

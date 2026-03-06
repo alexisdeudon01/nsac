@@ -58,6 +58,10 @@
 
         <div class="nav-section">
             <div class="nav-section-title">Reseau</div>
+            <div class="nav-item" data-page="cartography">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                Cartographie
+            </div>
             <div class="nav-item" data-page="network">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
                 Reseau
@@ -70,6 +74,10 @@
 
         <div class="nav-section">
             <div class="nav-section-title">Systeme</div>
+            <div class="nav-item" data-page="config">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                Config
+            </div>
             <div class="nav-item" data-page="logs">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 Logs
@@ -168,6 +176,31 @@
                         <input type="checkbox" id="toggle-proxy" onchange="toggleProxy()">
                         <span class="toggle-slider"></span>
                     </label>
+                </div>
+            </div>
+
+            <!-- Topologie Reseau -->
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">Topologie Reseau</span>
+                    <button class="btn btn-outline btn-sm" onclick="refreshTopology()">Rafraichir</button>
+                </div>
+                <div style="padding:0;overflow:hidden;border-radius:8px;margin-top:8px;">
+                    <canvas id="topology-canvas" width="900" height="450" style="width:100%;height:450px;display:block;"></canvas>
+                </div>
+                <div class="grid grid-4" style="margin-top:12px;">
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span class="topo-legend-dot" style="background:var(--success);"></span> Healthy
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span class="topo-legend-dot" style="background:var(--danger);"></span> Erreur
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span class="topo-legend-dot" style="background:var(--warning);"></span> Warning
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span class="topo-legend-dot" style="background:#666;"></span> Inactive
+                    </div>
                 </div>
             </div>
 
@@ -345,14 +378,165 @@ adb reboot</pre>
             </div>
         </div>
 
+        <!-- CONFIG -->
+        <div id="page-config" class="page fade-in">
+            <h2 class="page-title">Configuration</h2>
+
+            <div class="card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">Mitmproxy</span>
+                    <div class="btn-group">
+                        <button class="btn btn-outline btn-sm" onclick="loadDefaultConfig()">Charger defaut</button>
+                        <button class="btn btn-primary btn-sm" onclick="saveConfig()">Sauvegarder</button>
+                    </div>
+                </div>
+                <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">
+                    Configuration du proxy mitmweb. Redemarrez le container mitmproxy apres modification.
+                </p>
+                <div class="grid grid-2">
+                    <div class="form-group">
+                        <label class="form-label">Listen Host</label>
+                        <input class="form-input" id="cfg-listen_host" value="0.0.0.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Listen Port</label>
+                        <input class="form-input" id="cfg-listen_port" type="number" value="8080">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Web Host</label>
+                        <input class="form-input" id="cfg-web_host" value="0.0.0.0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Web Port</label>
+                        <input class="form-input" id="cfg-web_port" type="number" value="8081">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Stream Large Bodies</label>
+                        <input class="form-input" id="cfg-stream_large_bodies" value="5m">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Connection Strategy</label>
+                        <select class="form-select" id="cfg-connection_strategy">
+                            <option value="eager">eager</option>
+                            <option value="lazy" selected>lazy</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:24px;margin-top:8px;">
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-ssl_insecure"> SSL Insecure
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-upstream_cert" checked> Upstream Cert
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-http2" checked> HTTP/2
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-anticache"> Anti-Cache
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-anticomp"> Anti-Compression
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-showhost" checked> Show Host
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:14px;cursor:pointer;">
+                        <input type="checkbox" id="cfg-web_open_browser"> Open Browser
+                    </label>
+                </div>
+            </div>
+            <div id="config-status" style="display:none;margin-top:8px;"></div>
+        </div>
+
         <!-- LOGS -->
         <div id="page-logs" class="page fade-in">
-            <h2 class="page-title">Journal d'evenements</h2>
+            <h2 class="page-title">Logs en direct</h2>
             <div class="btn-group" style="margin-bottom:16px;">
-                <button class="btn btn-outline" onclick="refreshLogs()">Rafraichir</button>
-                <button class="btn btn-danger btn-sm" onclick="document.getElementById('log-console').innerHTML=''">Effacer</button>
+                <button class="btn btn-outline btn-sm log-filter-btn active" data-filter="all" onclick="setLogFilter('all')">Tous</button>
+                <button class="btn btn-outline btn-sm log-filter-btn" data-filter="app" onclick="setLogFilter('app')">Application</button>
+                <button class="btn btn-outline btn-sm log-filter-btn" data-filter="mobsf" onclick="setLogFilter('mobsf')">MobSF</button>
+                <button class="btn btn-outline btn-sm log-filter-btn" data-filter="mitmproxy" onclick="setLogFilter('mitmproxy')">Mitmproxy</button>
+                <button class="btn btn-danger btn-sm" onclick="clearLogs()">Effacer</button>
+                <label style="display:flex;align-items:center;gap:6px;color:var(--text-secondary);font-size:13px;margin-left:auto;">
+                    <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+                </label>
             </div>
             <div class="console" id="log-console-full" style="max-height:600px;"></div>
+        </div>
+
+        <!-- CARTOGRAPHIE -->
+        <div id="page-cartography" class="page fade-in">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+                <h2 class="page-title" style="margin-bottom:0;">Cartographie des processus</h2>
+                <div class="btn-group">
+                    <button class="btn btn-primary btn-sm" onclick="refreshCartography()">Rafraichir Live</button>
+                    <span id="carto-last-update" style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;"></span>
+                </div>
+            </div>
+
+            <!-- Legende globale -->
+            <div class="card" style="margin-bottom:24px;padding:12px 20px;">
+                <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:center;">
+                    <span style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">Legende :</span>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--accent);"></span> Input</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--info);"></span> Processus</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--success);"></span> Output / OK</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--warning);"></span> Warning</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--danger);"></span> Erreur</div>
+                    <div class="carto-legend-item"><span class="carto-legend-box" style="background:#666;"></span> Inactif</div>
+                    <div class="carto-legend-item"><span style="display:inline-block;width:30px;height:3px;background:var(--accent);border-radius:2px;"></span> Flux donnees</div>
+                    <div class="carto-legend-item"><span style="display:inline-block;width:30px;height:3px;background:var(--danger);border-radius:2px;border:1px dashed var(--danger);"></span> Erreur lien</div>
+                </div>
+            </div>
+
+            <!-- BP1: Interception Reseau -->
+            <div class="card carto-card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">BP1 - Interception Reseau (Traffic Capture)</span>
+                    <span class="badge badge-info" id="bp1-status">-</span>
+                </div>
+                <p class="carto-desc">Capture du trafic reseau des appareils Android via WiFi AP, redirection iptables et interception mitmproxy.</p>
+                <div class="carto-canvas-wrap">
+                    <canvas id="carto-bp1" width="1200" height="320"></canvas>
+                </div>
+            </div>
+
+            <!-- BP2: Analyse Statique MobSF -->
+            <div class="card carto-card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">BP2 - Analyse Statique APK (MobSF Pipeline)</span>
+                    <span class="badge badge-info" id="bp2-status">-</span>
+                </div>
+                <p class="carto-desc">Pipeline d'analyse statique : upload APK vers MobSF, scan automatique, generation de rapports de securite.</p>
+                <div class="carto-canvas-wrap">
+                    <canvas id="carto-bp2" width="1200" height="320"></canvas>
+                </div>
+            </div>
+
+            <!-- BP3: SSL Bypass Frida -->
+            <div class="card carto-card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">BP3 - SSL Pinning Bypass (Frida Injection)</span>
+                    <span class="badge badge-info" id="bp3-status">-</span>
+                </div>
+                <p class="carto-desc">Injection Frida via ADB pour bypasser le SSL pinning : hook SSLContext, OkHttp3, TrustManager, Conscrypt.</p>
+                <div class="carto-canvas-wrap">
+                    <canvas id="carto-bp3" width="1200" height="320"></canvas>
+                </div>
+            </div>
+
+            <!-- BP4: Audit IPC -->
+            <div class="card carto-card" style="margin-bottom:24px;">
+                <div class="card-header">
+                    <span class="card-title">BP4 - Audit IPC (Inter-Process Communication)</span>
+                    <span class="badge badge-info" id="bp4-status">-</span>
+                </div>
+                <p class="carto-desc">Audit des communications inter-processus Android : Activities, Services, BroadcastReceivers, ContentProviders exposes.</p>
+                <div class="carto-canvas-wrap">
+                    <canvas id="carto-bp4" width="1200" height="320"></canvas>
+                </div>
+            </div>
         </div>
 
     </main>

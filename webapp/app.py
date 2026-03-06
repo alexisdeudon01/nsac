@@ -656,6 +656,113 @@ def get_topology():
 
 
 # =====================================================
+# API - Cartography (Business Process Maps)
+# =====================================================
+
+
+@app.route("/api/cartography", methods=["GET"])
+def get_cartography():
+    """Get live data for all business process maps."""
+    # Get container statuses
+    stdout, _, _ = run_cmd("docker ps -a --format '{{json .}}'")
+    containers = []
+    for line in stdout.splitlines():
+        if line.strip():
+            try:
+                containers.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+
+    mitm_container = next((c for c in containers if "mitmproxy" in (c.get("Names") or "")), None)
+    mitm_running = mitm_container and mitm_container.get("State") == "running"
+    mitm_has_error = state["container_errors"].get("mitmproxy", False)
+
+    mobsf_container = next((c for c in containers if "mobsf" in (c.get("Names") or "")), None)
+    mobsf_running = mobsf_container and mobsf_container.get("State") == "running"
+    mobsf_has_error = state["container_errors"].get("mobsf", False)
+
+    # IP forwarding
+    fwd_stdout, _, _ = run_cmd("cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo '0'")
+    ip_forward = fwd_stdout.strip() == "1"
+
+    # WiFi status
+    iface_stdout, _, _ = run_cmd("iwconfig 2>/dev/null | head -3 || echo 'no wifi'")
+    wifi_ok = "no wifi" not in (iface_stdout or "")
+
+    # Mitmproxy flow count
+    flow_count = 0
+    intercepted_hosts = []
+    flow_stdout, _, flow_code = run_cmd(
+        "curl -s http://127.0.0.1:8081/flows.json 2>/dev/null | python3 -c \"import sys,json;flows=json.load(sys.stdin);print(len(flows));print('\\n'.join(set(f.get('request',{}).get('host','') for f in flows[-20:])))\" 2>/dev/null",
+        timeout=3,
+    )
+    if flow_code == 0 and flow_stdout:
+        lines = flow_stdout.strip().splitlines()
+        try:
+            flow_count = int(lines[0])
+        except (ValueError, IndexError):
+            pass
+        intercepted_hosts = [h for h in lines[1:] if h]
+
+    # Device info
+    devices = state["connected_devices"]
+    device_count = len(devices)
+
+    # Reports count
+    report_count = 0
+    if REPORTS_DIR.exists():
+        for pkg_dir in REPORTS_DIR.iterdir():
+            if pkg_dir.is_dir() and pkg_dir.name != "screenshots":
+                report_count += len(list(pkg_dir.iterdir()))
+
+    # Recent errors from logs
+    recent_errors = [
+        l for l in state["logs"][-50:] if l.get("level") == "error"
+    ]
+    container_warnings = {}
+    for name, logs in state["container_logs"].items():
+        warns = sum(1 for l in logs[-50:] if l.get("level") in ("warn", "error"))
+        if warns > 0:
+            container_warnings[name] = warns
+
+    return jsonify({
+        "timestamp": datetime.now().isoformat(),
+        "bp1_network": {
+            "wifi_ok": wifi_ok,
+            "wifi_info": iface_stdout.split("\n")[0] if iface_stdout else "N/A",
+            "ip_forward": ip_forward,
+            "iptables_active": state["transparent_proxy"],
+            "mitmproxy_running": mitm_running,
+            "mitmproxy_error": mitm_has_error,
+            "flow_count": flow_count,
+            "intercepted_hosts": intercepted_hosts[:10],
+            "device_count": device_count,
+            "devices": [{"serial": d["serial"], "model": d.get("model", d["serial"]), "state": d.get("state", "?")} for d in devices],
+        },
+        "bp2_mobsf": {
+            "mobsf_running": mobsf_running,
+            "mobsf_error": mobsf_has_error,
+            "report_count": report_count,
+            "mitmproxy_running": mitm_running,
+            "warnings": container_warnings.get("mobsf", 0),
+        },
+        "bp3_frida": {
+            "frida_active": state["frida_active"],
+            "device_count": device_count,
+            "devices": [{"serial": d["serial"], "model": d.get("model", d["serial"])} for d in devices],
+            "mitmproxy_running": mitm_running,
+            "flow_count": flow_count,
+        },
+        "bp4_audit": {
+            "device_count": device_count,
+            "report_count": report_count,
+            "frida_active": state["frida_active"],
+            "recent_errors": len(recent_errors),
+        },
+    })
+
+
+# =====================================================
 # API - System
 # =====================================================
 
