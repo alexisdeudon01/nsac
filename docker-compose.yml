@@ -17,7 +17,7 @@ services:
     image: mitmproxy/mitmproxy:latest
     container_name: mitmproxy
     network_mode: host
-    command: mitmweb --web-host 0.0.0.0 --web-port 8081 --listen-port 8080 --set web_open_browser=false --set web_password=
+    command: mitmweb --web-host 0.0.0.0 --web-port 8081 --listen-port 8080 --set web_open_browser=false --set web_password=nsac
     volumes:
       - mitmproxy_data:/home/mitmproxy/.mitmproxy
     restart: unless-stopped
