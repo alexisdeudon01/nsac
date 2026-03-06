@@ -34,6 +34,14 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
                 Dashboard
             </div>
+            <div class="nav-item" data-page="highlevel">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="4" cy="19" r="3"/><circle cx="20" cy="19" r="3"/><line x1="12" y1="8" x2="4" y2="16"/><line x1="12" y1="8" x2="20" y2="16"/></svg>
+                High Level View
+            </div>
+            <div class="nav-item" data-page="cartography">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                Cartographie
+            </div>
             <div class="nav-item" data-page="containers">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></svg>
                 Containers
@@ -58,10 +66,6 @@
 
         <div class="nav-section">
             <div class="nav-section-title">Reseau</div>
-            <div class="nav-item" data-page="cartography">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-                Cartographie
-            </div>
             <div class="nav-item" data-page="network">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0114.08 0M1.42 9a16 16 0 0121.16 0M8.53 16.11a6 6 0 016.95 0M12 20h.01"/></svg>
                 Reseau
@@ -179,16 +183,59 @@
                 </div>
             </div>
 
-            <!-- Topologie Reseau -->
+            <!-- Probes status -->
+            <div class="card" style="margin-bottom:24px;" id="probes-dashboard-card">
+                <div class="card-header">
+                    <span class="card-title">Probes - Sante des entites</span>
+                    <button class="btn btn-outline btn-sm" onclick="navigate('highlevel')">Voir High Level</button>
+                </div>
+                <div id="probes-summary" class="grid grid-3" style="gap:8px;"></div>
+            </div>
+
+            <!-- Mini logs -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">Journal</span>
+                    <button class="btn btn-outline btn-sm" onclick="navigate('logs')">Voir tout</button>
+                </div>
+                <div class="console" id="log-console" style="max-height:200px;"></div>
+            </div>
+        </div>
+
+        <!-- HIGH LEVEL VIEW -->
+        <div id="page-highlevel" class="page fade-in">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+                <h2 class="page-title" style="margin-bottom:0;">High Level View</h2>
+                <div class="btn-group">
+                    <button class="btn btn-primary btn-sm" onclick="refreshHighLevel()">Rafraichir</button>
+                    <span id="hl-last-update" style="font-size:12px;color:var(--text-secondary);display:flex;align-items:center;"></span>
+                </div>
+            </div>
+
+            <!-- Probes table -->
             <div class="card" style="margin-bottom:24px;">
                 <div class="card-header">
+                    <span class="card-title">Probes - Toutes les entites</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Entite</th><th>Type</th><th>Requis</th><th>Statut</th><th>Auth</th><th>Latence</th><th>Detail</th></tr>
+                        </thead>
+                        <tbody id="probes-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Topology Canvas -->
+            <div class="card">
+                <div class="card-header">
                     <span class="card-title">Topologie Reseau</span>
-                    <button class="btn btn-outline btn-sm" onclick="refreshTopology()">Rafraichir</button>
                 </div>
                 <div style="padding:0;overflow:hidden;border-radius:8px;margin-top:8px;">
-                    <canvas id="topology-canvas" width="900" height="450" style="width:100%;height:450px;display:block;"></canvas>
+                    <canvas id="topology-canvas" width="1200" height="550" style="width:100%;height:550px;display:block;"></canvas>
                 </div>
-                <div class="grid grid-4" style="margin-top:12px;">
+                <div style="display:flex;flex-wrap:wrap;gap:24px;margin-top:12px;padding:0 4px;">
                     <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
                         <span class="topo-legend-dot" style="background:var(--success);"></span> Healthy
                     </div>
@@ -201,16 +248,13 @@
                     <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
                         <span class="topo-legend-dot" style="background:#666;"></span> Inactive
                     </div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span style="display:inline-block;width:14px;height:14px;border:2px solid var(--accent);border-radius:50%;"></span> Obligatoire
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-secondary);">
+                        <span style="display:inline-block;width:14px;height:14px;border:2px dashed #666;border-radius:50%;"></span> Optionnel
+                    </div>
                 </div>
-            </div>
-
-            <!-- Mini logs -->
-            <div class="card">
-                <div class="card-header">
-                    <span class="card-title">Journal</span>
-                    <button class="btn btn-outline btn-sm" onclick="navigate('logs')">Voir tout</button>
-                </div>
-                <div class="console" id="log-console" style="max-height:200px;"></div>
             </div>
         </div>
 
@@ -485,8 +529,10 @@ adb reboot</pre>
                     <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--warning);"></span> Warning</div>
                     <div class="carto-legend-item"><span class="carto-legend-box" style="background:var(--danger);"></span> Erreur</div>
                     <div class="carto-legend-item"><span class="carto-legend-box" style="background:#666;"></span> Inactif</div>
-                    <div class="carto-legend-item"><span style="display:inline-block;width:30px;height:3px;background:var(--accent);border-radius:2px;"></span> Flux donnees</div>
-                    <div class="carto-legend-item"><span style="display:inline-block;width:30px;height:3px;background:var(--danger);border-radius:2px;border:1px dashed var(--danger);"></span> Erreur lien</div>
+                    <div class="carto-legend-item"><span style="display:inline-block;width:14px;height:14px;border:3px solid var(--info);border-radius:3px;"></span> Obligatoire</div>
+                    <div class="carto-legend-item"><span style="display:inline-block;width:14px;height:14px;border:2px dashed #666;border-radius:3px;"></span> Optionnel</div>
+                    <div class="carto-legend-item"><span style="display:inline-block;width:30px;height:3px;background:var(--accent);border-radius:2px;"></span> Flux</div>
+                    <div class="carto-legend-item"><span style="display:inline-block;width:30px;height:3px;background:var(--danger);border-radius:2px;border:1px dashed var(--danger);"></span> Erreur</div>
                 </div>
             </div>
 
@@ -496,9 +542,9 @@ adb reboot</pre>
                     <span class="card-title">BP1 - Interception Reseau (Traffic Capture)</span>
                     <span class="badge badge-info" id="bp1-status">-</span>
                 </div>
-                <p class="carto-desc">Capture du trafic reseau des appareils Android via WiFi AP, redirection iptables et interception mitmproxy.</p>
+                <p class="carto-desc">Capture du trafic reseau des appareils Android via WiFi AP, redirection iptables et interception mitmproxy. <strong>Obligatoire:</strong> Host, Mitmproxy, iptables. <strong>Optionnel:</strong> WiFi AP, Devices.</p>
                 <div class="carto-canvas-wrap">
-                    <canvas id="carto-bp1" width="1200" height="320"></canvas>
+                    <canvas id="carto-bp1" width="1200" height="380"></canvas>
                 </div>
             </div>
 
@@ -508,9 +554,9 @@ adb reboot</pre>
                     <span class="card-title">BP2 - Analyse Statique APK (MobSF Pipeline)</span>
                     <span class="badge badge-info" id="bp2-status">-</span>
                 </div>
-                <p class="carto-desc">Pipeline d'analyse statique : upload APK vers MobSF, scan automatique, generation de rapports de securite.</p>
+                <p class="carto-desc">Upload APK vers MobSF, scan automatique, generation rapports. <strong>Obligatoire:</strong> MobSF Engine, NSAC API. <strong>Optionnel:</strong> Mitmproxy (analyse dynamique).</p>
                 <div class="carto-canvas-wrap">
-                    <canvas id="carto-bp2" width="1200" height="320"></canvas>
+                    <canvas id="carto-bp2" width="1200" height="380"></canvas>
                 </div>
             </div>
 
@@ -520,9 +566,9 @@ adb reboot</pre>
                     <span class="card-title">BP3 - SSL Pinning Bypass (Frida Injection)</span>
                     <span class="badge badge-info" id="bp3-status">-</span>
                 </div>
-                <p class="carto-desc">Injection Frida via ADB pour bypasser le SSL pinning : hook SSLContext, OkHttp3, TrustManager, Conscrypt.</p>
+                <p class="carto-desc">Injection Frida via ADB pour bypasser SSL pinning. <strong>Obligatoire:</strong> ADB, Frida Server, Device. <strong>Optionnel:</strong> Mitmproxy (capture post-bypass).</p>
                 <div class="carto-canvas-wrap">
-                    <canvas id="carto-bp3" width="1200" height="320"></canvas>
+                    <canvas id="carto-bp3" width="1200" height="380"></canvas>
                 </div>
             </div>
 
@@ -532,9 +578,9 @@ adb reboot</pre>
                     <span class="card-title">BP4 - Audit IPC (Inter-Process Communication)</span>
                     <span class="badge badge-info" id="bp4-status">-</span>
                 </div>
-                <p class="carto-desc">Audit des communications inter-processus Android : Activities, Services, BroadcastReceivers, ContentProviders exposes.</p>
+                <p class="carto-desc">Audit des communications inter-processus Android. <strong>Obligatoire:</strong> ADB, Device, audit_ipc.sh. <strong>Optionnel:</strong> Frida (hooks runtime).</p>
                 <div class="carto-canvas-wrap">
-                    <canvas id="carto-bp4" width="1200" height="320"></canvas>
+                    <canvas id="carto-bp4" width="1200" height="380"></canvas>
                 </div>
             </div>
         </div>

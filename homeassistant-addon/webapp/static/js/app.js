@@ -20,8 +20,9 @@ function navigate(pageId) {
     if (page) page.classList.add('active');
     if (nav) nav.classList.add('active');
 
-    // Stop cartography live when leaving the page
+    // Stop live intervals when leaving pages
     if (pageId !== 'cartography') stopCartoLive();
+    if (pageId !== 'highlevel') stopHighLevelLive();
 
     const refreshMap = {
         'dashboard': refreshDashboard,
@@ -31,6 +32,7 @@ function navigate(pageId) {
         'logs': refreshLogs,
         'config': loadConfig,
         'cartography': startCartoLive,
+        'highlevel': startHighLevelLive,
     };
     if (refreshMap[pageId]) refreshMap[pageId]();
 }
@@ -82,7 +84,7 @@ async function refreshDashboard() {
         setToggle('toggle-proxy', netStatus.transparent_proxy);
     }
 
-    refreshTopology();
+    refreshProbesSummary();
 }
 
 function updateServiceStatus(elementId, containers, name) {
@@ -655,6 +657,83 @@ function drawTopology() {
 }
 
 // =====================================================
+// High Level View + Probes
+// =====================================================
+
+let probesData = null;
+let hlInterval = null;
+
+function startHighLevelLive() {
+    refreshHighLevel();
+    if (hlInterval) clearInterval(hlInterval);
+    hlInterval = setInterval(refreshHighLevel, 5000);
+}
+
+function stopHighLevelLive() {
+    if (hlInterval) { clearInterval(hlInterval); hlInterval = null; }
+}
+
+async function refreshHighLevel() {
+    probesData = await api('/api/probes');
+    if (!probesData) return;
+    document.getElementById('hl-last-update').textContent =
+        'Maj: ' + new Date().toLocaleTimeString();
+    renderProbesTable();
+    refreshTopology();
+}
+
+async function refreshProbesSummary() {
+    const data = await api('/api/probes');
+    if (!data) return;
+    probesData = data;
+    const el = document.getElementById('probes-summary');
+    if (!el) return;
+
+    const entities = Object.entries(data.entities);
+    el.innerHTML = entities.map(([key, e]) => {
+        const statusColors = { ok: 'success', error: 'danger', warning: 'warning', inactive: 'info' };
+        const badge = statusColors[e.status] || 'info';
+        const req = e.required ? '<span style="color:var(--accent);font-size:10px;">REQUIS</span>' : '<span style="color:#666;font-size:10px;">OPT</span>';
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary);">
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span class="topo-legend-dot" style="background:var(--${badge});"></span>
+                <span style="font-size:12px;font-weight:600;">${esc(e.label)}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+                ${req}
+                <span class="badge badge-${badge}" style="font-size:10px;padding:2px 6px;">${esc(e.status)}</span>
+                ${e.auth ? `<span class="badge badge-${e.auth === 'ok' ? 'success' : 'danger'}" style="font-size:9px;padding:1px 5px;">AUTH</span>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderProbesTable() {
+    const tbody = document.getElementById('probes-tbody');
+    if (!tbody || !probesData) return;
+
+    const entities = Object.entries(probesData.entities);
+    tbody.innerHTML = entities.map(([key, e]) => {
+        const statusColors = { ok: 'success', error: 'danger', warning: 'warning', inactive: 'info' };
+        const badge = statusColors[e.status] || 'info';
+        const authBadge = e.auth
+            ? `<span class="badge badge-${e.auth === 'ok' ? 'success' : 'danger'}">${e.auth === 'ok' ? 'OK' : 'FAIL'}</span>`
+            : '<span style="color:#555;">-</span>';
+        return `<tr>
+            <td><strong>${esc(e.label)}</strong></td>
+            <td><span style="font-size:12px;color:var(--text-secondary);">${esc(e.category)}</span></td>
+            <td>${e.required
+                ? '<span class="badge badge-info">Obligatoire</span>'
+                : '<span style="color:#666;font-size:12px;">Optionnel</span>'}</td>
+            <td><span class="badge badge-${badge}">${esc(e.status)}</span></td>
+            <td>${authBadge}</td>
+            <td><code style="font-size:11px;">${e.latency_ms || 0}ms</code></td>
+            <td style="font-size:12px;color:var(--text-secondary);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(e.detail || '')}</td>
+        </tr>`;
+    }).join('');
+}
+
+// =====================================================
 // Cartography - Business Process Maps
 // =====================================================
 
@@ -711,7 +790,7 @@ const CARTO_COLORS = {
     textDim: '#94a3b8',
 };
 
-function drawCartoNode(ctx, x, y, w, h, label, sublabel, type, status) {
+function drawCartoNode(ctx, x, y, w, h, label, sublabel, type, status, opts = {}) {
     const colors = {
         input: CARTO_COLORS.input,
         process: CARTO_COLORS.process,
@@ -737,9 +816,17 @@ function drawCartoNode(ctx, x, y, w, h, label, sublabel, type, status) {
     ctx.roundRect(x - w/2, y - h/2, w, h, r);
     ctx.fillStyle = CARTO_COLORS.bg;
     ctx.fill();
+    // Mandatory = solid thick border, Optional = dashed thinner
+    if (opts.required === false) {
+        ctx.setLineDash([5, 3]);
+        ctx.lineWidth = 1.5;
+    } else {
+        ctx.setLineDash([]);
+        ctx.lineWidth = 3;
+    }
     ctx.strokeStyle = borderColor;
-    ctx.lineWidth = 2.5;
     ctx.stroke();
+    ctx.setLineDash([]);
     ctx.shadowBlur = 0;
 
     // Status indicator dot
@@ -749,6 +836,25 @@ function drawCartoNode(ctx, x, y, w, h, label, sublabel, type, status) {
     ctx.fillStyle = borderColor;
     ctx.fill();
 
+    // Required/optional badge top-right
+    if (opts.required !== undefined) {
+        ctx.font = 'bold 8px Inter, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = opts.required ? CARTO_COLORS.process : '#555';
+        ctx.fillText(opts.required ? 'REQ' : 'OPT', x + w/2 - 22, y - h/2 + 6);
+    }
+
+    // Auth badge if applicable
+    if (opts.auth) {
+        const authOk = opts.auth === 'ok';
+        ctx.font = 'bold 8px Inter, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = authOk ? CARTO_COLORS.output : CARTO_COLORS.error;
+        ctx.fillText(authOk ? 'AUTH OK' : 'AUTH FAIL', x - w/2 + 10, y + h/2 - 14);
+    }
+
     // Type label top-left
     ctx.font = 'bold 9px Inter, sans-serif';
     ctx.textAlign = 'left';
@@ -756,6 +862,15 @@ function drawCartoNode(ctx, x, y, w, h, label, sublabel, type, status) {
     ctx.fillStyle = borderColor;
     const typeLabels = { input: 'INPUT', process: 'PROCESS', output: 'OUTPUT' };
     ctx.fillText(typeLabels[type] || 'NODE', x - w/2 + 10, y - h/2 + 6);
+
+    // Probe latency
+    if (opts.latency_ms !== undefined) {
+        ctx.font = '8px JetBrains Mono, monospace';
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = opts.latency_ms > 500 ? CARTO_COLORS.warning : CARTO_COLORS.textDim;
+        ctx.fillText(opts.latency_ms + 'ms', x + w/2 - 8, y + h/2 - 4);
+    }
 
     // Main label
     ctx.font = 'bold 13px Inter, sans-serif';
@@ -833,36 +948,37 @@ function drawBP1() {
     if (!r) return;
     const { ctx, W, H } = r;
     const d = cartoData.bp1_network;
-    const nw = 130, nh = 60;
-    const cy = H / 2;
+    const p = cartoData.probes || {};
+    const nw = 140, nh = 70;
+    const cy = H * 0.45;
 
-    // Positions: Device -> WiFi -> Host(ipfwd) -> iptables -> Mitmproxy -> Internet
     const nodes = [
-        { x: W*0.08, y: cy, label: 'Android Device', sub: d.device_count + ' connecte(s)', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive' },
-        { x: W*0.24, y: cy, label: 'WiFi AP', sub: d.wifi_ok ? 'Actif' : 'Non detecte', type: 'process', status: d.wifi_ok ? 'ok' : 'error' },
-        { x: W*0.40, y: cy, label: 'NSAC Host', sub: 'IP Forward: ' + (d.ip_forward ? 'ON' : 'OFF'), type: 'process', status: d.ip_forward ? 'ok' : 'warning' },
-        { x: W*0.56, y: cy, label: 'iptables NAT', sub: d.iptables_active ? 'PREROUTING :8080' : 'Inactif', type: 'process', status: d.iptables_active ? 'ok' : 'inactive' },
-        { x: W*0.72, y: cy, label: 'Mitmproxy', sub: d.flow_count + ' flows captures', type: 'process', status: d.mitmproxy_error ? 'error' : (d.mitmproxy_running ? 'ok' : 'inactive') },
-        { x: W*0.90, y: cy, label: 'Internet', sub: d.intercepted_hosts.slice(0,2).join(', ') || 'Aucun host', type: 'output', status: d.flow_count > 0 ? 'ok' : 'inactive' },
+        { x: W*0.08, y: cy, label: 'Android Device', sub: d.device_count + ' connecte(s)', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive', required: false, probe: 'adb_devices' },
+        { x: W*0.24, y: cy, label: 'WiFi AP', sub: d.wifi_ok ? 'Actif' : 'Non detecte', type: 'process', status: d.wifi_ok ? 'ok' : 'error', required: false, probe: 'wifi_ap' },
+        { x: W*0.40, y: cy, label: 'NSAC Host', sub: 'IP Fwd: ' + (d.ip_forward ? 'ON' : 'OFF'), type: 'process', status: d.ip_forward ? 'ok' : 'warning', required: true, probe: 'ip_forwarding' },
+        { x: W*0.56, y: cy, label: 'iptables NAT', sub: d.iptables_active ? 'PREROUTING :8080' : 'Inactif', type: 'process', status: d.iptables_active ? 'ok' : 'inactive', required: true, probe: 'iptables' },
+        { x: W*0.74, y: cy, label: 'Mitmproxy', sub: d.flow_count + ' flows', type: 'process', status: d.mitmproxy_error ? 'error' : (d.mitmproxy_running ? 'ok' : 'inactive'), required: true, probe: 'mitmproxy', auth: d.mitmproxy_auth },
+        { x: W*0.92, y: cy, label: 'Internet', sub: d.intercepted_hosts.slice(0,2).join(', ') || 'Aucun host', type: 'output', status: d.flow_count > 0 ? 'ok' : 'inactive', required: false },
     ];
 
     // Arrows
+    const labels = ['WiFi 802.11', 'Ethernet/Bridge', 'NAT Redirect', 'TCP :8080', 'HTTPS'];
     for (let i = 0; i < nodes.length - 1; i++) {
         const from = nodes[i], to = nodes[i + 1];
-        const labels = ['WiFi 802.11', 'Ethernet/Bridge', 'NAT Redirect', 'TCP :8080', 'HTTPS'];
         const fromOk = from.status !== 'inactive' && from.status !== 'error';
         const toOk = to.status !== 'inactive' && to.status !== 'error';
         let arrowStatus = (fromOk && toOk) ? 'active' : (from.status === 'error' || to.status === 'error') ? 'error' : 'inactive';
         drawCartoArrow(ctx, from.x + nw/2, from.y, to.x - nw/2, to.y, labels[i], arrowStatus);
     }
 
-    // Nodes
     for (const n of nodes) {
-        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status);
+        const probeInfo = n.probe && p[n.probe] ? p[n.probe] : {};
+        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status, {
+            required: n.required, auth: n.auth, latency_ms: probeInfo.latency_ms,
+        });
     }
 
-    // Status badge
-    const bpOk = d.mitmproxy_running && d.iptables_active && d.wifi_ok;
+    const bpOk = d.mitmproxy_running && d.iptables_active;
     const el = document.getElementById('bp1-status');
     if (el) {
         el.className = 'badge ' + (bpOk ? 'badge-success' : d.mitmproxy_error ? 'badge-danger' : 'badge-warning');
@@ -877,21 +993,20 @@ function drawBP2() {
     if (!r) return;
     const { ctx, W, H } = r;
     const d = cartoData.bp2_mobsf;
-    const nw = 140, nh = 60;
-    const cy = H / 2;
+    const p = cartoData.probes || {};
+    const nw = 140, nh = 70;
+    const cy = H * 0.5;
 
     const nodes = [
-        { x: W*0.10, y: cy, label: 'APK / IPA File', sub: 'Upload utilisateur', type: 'input', status: 'ok' },
-        { x: W*0.28, y: cy, label: 'NSAC Upload', sub: 'POST /api/mobsf/upload', type: 'process', status: 'ok' },
-        { x: W*0.46, y: cy, label: 'MobSF Engine', sub: d.mobsf_running ? 'Running :8000' : 'Stopped', type: 'process', status: d.mobsf_error ? 'error' : (d.mobsf_running ? 'ok' : 'inactive') },
-        { x: W*0.64, y: cy, label: 'Static Analysis', sub: 'Decompile + Scan', type: 'process', status: d.mobsf_running ? 'ok' : 'inactive' },
-        { x: W*0.82, y: cy, label: 'Security Report', sub: d.report_count + ' rapport(s)', type: 'output', status: d.report_count > 0 ? 'ok' : 'inactive' },
+        { x: W*0.10, y: cy, label: 'APK / IPA File', sub: 'Upload utilisateur', type: 'input', status: 'ok', required: true },
+        { x: W*0.28, y: cy, label: 'NSAC Upload', sub: 'POST /api/mobsf/upload', type: 'process', status: 'ok', required: true, probe: 'nsac_host' },
+        { x: W*0.46, y: cy, label: 'MobSF Engine', sub: d.mobsf_running ? 'Running :8000' : 'Stopped', type: 'process', status: d.mobsf_error ? 'error' : (d.mobsf_running ? 'ok' : 'inactive'), required: true, probe: 'mobsf', auth: d.mobsf_auth },
+        { x: W*0.64, y: cy, label: 'Static Analysis', sub: 'Decompile + Scan', type: 'process', status: d.mobsf_running ? 'ok' : 'inactive', required: true },
+        { x: W*0.82, y: cy, label: 'Security Report', sub: d.report_count + ' rapport(s)', type: 'output', status: d.report_count > 0 ? 'ok' : 'inactive', required: true },
     ];
 
-    // Also show optional mitmproxy link for dynamic analysis
-    const mitmNode = { x: W*0.46, y: cy - 90, label: 'Mitmproxy', sub: 'Dynamic Analysis', type: 'process', status: d.mitmproxy_running ? 'ok' : 'inactive' };
+    const mitmNode = { x: W*0.46, y: cy - 100, label: 'Mitmproxy', sub: 'Dynamic Analysis', type: 'process', status: d.mitmproxy_running ? 'ok' : 'inactive', required: false, probe: 'mitmproxy' };
 
-    // Main arrows
     const labels = ['HTTP POST', 'REST API', 'Decompile + Rules', 'PDF / JSON'];
     for (let i = 0; i < nodes.length - 1; i++) {
         const fromOk = nodes[i].status !== 'inactive' && nodes[i].status !== 'error';
@@ -900,13 +1015,15 @@ function drawBP2() {
             (fromOk && toOk) ? 'active' : nodes[i+1].status === 'error' ? 'error' : 'inactive');
     }
 
-    // Mitmproxy link
     drawCartoArrow(ctx, mitmNode.x, mitmNode.y + nh/2, nodes[2].x, nodes[2].y - nh/2, 'Traffic data', d.mitmproxy_running ? 'active' : 'inactive');
 
-    // Draw nodes
-    drawCartoNode(ctx, mitmNode.x, mitmNode.y, nw, nh, mitmNode.label, mitmNode.sub, mitmNode.type, mitmNode.status === 'ok' ? null : mitmNode.status);
+    const mitmProbe = p['mitmproxy'] || {};
+    drawCartoNode(ctx, mitmNode.x, mitmNode.y, nw, nh, mitmNode.label, mitmNode.sub, mitmNode.type, mitmNode.status === 'ok' ? null : mitmNode.status, { required: false, latency_ms: mitmProbe.latency_ms });
     for (const n of nodes) {
-        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status);
+        const probeInfo = n.probe && p[n.probe] ? p[n.probe] : {};
+        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status, {
+            required: n.required, auth: n.auth, latency_ms: probeInfo.latency_ms,
+        });
     }
     drawCartoWarningBadge(ctx, nodes[2].x + nw/2 - 4, nodes[2].y - nh/2 - 4, d.warnings);
 
@@ -925,45 +1042,44 @@ function drawBP3() {
     if (!r) return;
     const { ctx, W, H } = r;
     const d = cartoData.bp3_frida;
-    const nw = 140, nh = 60;
-    const cy = H / 2;
+    const p = cartoData.probes || {};
+    const nw = 140, nh = 70;
+    const cy = H * 0.4;
 
     const nodes = [
-        { x: W*0.08, y: cy, label: 'Android Target', sub: d.device_count + ' device(s)', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive' },
-        { x: W*0.24, y: cy, label: 'ADB Bridge', sub: 'USB / TCP', type: 'process', status: d.device_count > 0 ? 'ok' : 'inactive' },
-        { x: W*0.40, y: cy, label: 'Frida Server', sub: d.frida_active ? 'Actif (injecting)' : 'Inactif', type: 'process', status: d.frida_active ? 'ok' : 'inactive' },
-        { x: W*0.56, y: cy, label: 'SSL Hook', sub: 'SSLContext, OkHttp3', type: 'process', status: d.frida_active ? 'ok' : 'inactive' },
-        { x: W*0.72, y: cy, label: 'Unpinned Traffic', sub: 'Bypass active', type: 'output', status: d.frida_active ? 'ok' : 'inactive' },
-        { x: W*0.90, y: cy, label: 'Mitmproxy', sub: d.flow_count + ' flows', type: 'output', status: d.mitmproxy_running ? 'ok' : 'inactive' },
+        { x: W*0.08, y: cy, label: 'Android Target', sub: d.device_count + ' device(s)', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive', required: true, probe: 'adb_devices' },
+        { x: W*0.24, y: cy, label: 'ADB Bridge', sub: d.adb_ok ? 'Disponible' : 'Non installe', type: 'process', status: d.adb_ok ? 'ok' : 'error', required: true, probe: 'adb_server' },
+        { x: W*0.40, y: cy, label: 'Frida Server', sub: d.frida_installed ? (d.frida_active ? 'Injecting' : 'Pret') : 'Non installe', type: 'process', status: d.frida_active ? 'ok' : (d.frida_installed ? 'warning' : 'inactive'), required: true, probe: 'frida_server' },
+        { x: W*0.56, y: cy, label: 'SSL Hook', sub: 'SSLContext, OkHttp3', type: 'process', status: d.frida_active ? 'ok' : 'inactive', required: true },
+        { x: W*0.74, y: cy, label: 'Unpinned Traffic', sub: 'Bypass active', type: 'output', status: d.frida_active ? 'ok' : 'inactive', required: true },
+        { x: W*0.92, y: cy, label: 'Mitmproxy', sub: d.flow_count + ' flows', type: 'output', status: d.mitmproxy_running ? 'ok' : 'inactive', required: false, probe: 'mitmproxy' },
     ];
 
-    // Frida hooks detail (sub-nodes below)
     const hooks = [
-        { x: W*0.32, y: cy + 90, label: 'TrustManager', status: d.frida_active ? 'ok' : 'inactive' },
-        { x: W*0.46, y: cy + 90, label: 'Conscrypt', status: d.frida_active ? 'ok' : 'inactive' },
-        { x: W*0.60, y: cy + 90, label: 'WebView SSL', status: d.frida_active ? 'ok' : 'inactive' },
+        { x: W*0.30, y: cy + 100, label: 'TrustManager', status: d.frida_active ? 'ok' : 'inactive' },
+        { x: W*0.46, y: cy + 100, label: 'Conscrypt', status: d.frida_active ? 'ok' : 'inactive' },
+        { x: W*0.62, y: cy + 100, label: 'WebView SSL', status: d.frida_active ? 'ok' : 'inactive' },
     ];
 
-    // Main arrows
     const labels = ['adb forward', 'frida -U -f', 'JS Injection', 'Cleartext', 'Intercepted'];
     for (let i = 0; i < nodes.length - 1; i++) {
-        const fromOk = nodes[i].status !== 'inactive';
-        const toOk = nodes[i+1].status !== 'inactive';
+        const fromOk = nodes[i].status !== 'inactive' && nodes[i].status !== 'error';
+        const toOk = nodes[i+1].status !== 'inactive' && nodes[i+1].status !== 'error';
         drawCartoArrow(ctx, nodes[i].x + nw/2, nodes[i].y, nodes[i+1].x - nw/2, nodes[i+1].y, labels[i],
             (fromOk && toOk) ? 'active' : 'inactive');
     }
 
-    // Hook arrows
     for (const hook of hooks) {
         drawCartoArrow(ctx, nodes[3].x, nodes[3].y + nh/2, hook.x, hook.y - 20, '', hook.status === 'ok' ? 'success' : 'inactive');
-        // Mini hook node
         ctx.beginPath();
-        ctx.roundRect(hook.x - 50, hook.y - 18, 100, 36, 6);
+        ctx.roundRect(hook.x - 55, hook.y - 18, 110, 36, 6);
         ctx.fillStyle = CARTO_COLORS.bg;
         ctx.fill();
+        ctx.setLineDash([4, 3]);
         ctx.strokeStyle = hook.status === 'ok' ? CARTO_COLORS.output : CARTO_COLORS.inactive;
         ctx.lineWidth = 1.5;
         ctx.stroke();
+        ctx.setLineDash([]);
         ctx.font = '11px Inter, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -971,15 +1087,17 @@ function drawBP3() {
         ctx.fillText(hook.label, hook.x, hook.y);
     }
 
-    // Main nodes
     for (const n of nodes) {
-        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status);
+        const probeInfo = n.probe && p[n.probe] ? p[n.probe] : {};
+        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status, {
+            required: n.required, latency_ms: probeInfo.latency_ms,
+        });
     }
 
     const el = document.getElementById('bp3-status');
     if (el) {
-        el.className = 'badge ' + (d.frida_active ? 'badge-success' : 'badge-warning');
-        el.textContent = d.frida_active ? 'Injection Active' : 'Inactif';
+        el.className = 'badge ' + (d.frida_active ? 'badge-success' : d.frida_installed ? 'badge-warning' : 'badge-danger');
+        el.textContent = d.frida_active ? 'Injection Active' : d.frida_installed ? 'Pret' : 'Non installe';
     }
 }
 
@@ -990,35 +1108,39 @@ function drawBP4() {
     if (!r) return;
     const { ctx, W, H } = r;
     const d = cartoData.bp4_audit;
-    const nw = 140, nh = 60;
-    const cy = H * 0.4;
+    const p = cartoData.probes || {};
+    const nw = 140, nh = 70;
+    const cy = H * 0.38;
 
     const nodes = [
-        { x: W*0.08, y: cy, label: 'Target Package', sub: 'com.example.app', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive' },
-        { x: W*0.26, y: cy, label: 'ADB Shell', sub: 'dumpsys + pm', type: 'process', status: d.device_count > 0 ? 'ok' : 'inactive' },
-        { x: W*0.44, y: cy, label: 'audit_ipc.sh', sub: 'Script analyse', type: 'process', status: 'ok' },
-        { x: W*0.62, y: cy, label: 'IPC Scanner', sub: 'Activity/Service/BR/CP', type: 'process', status: 'ok' },
-        { x: W*0.82, y: cy, label: 'Audit Report', sub: d.report_count + ' fichier(s)', type: 'output', status: d.report_count > 0 ? 'ok' : 'inactive' },
+        { x: W*0.08, y: cy, label: 'Target Package', sub: 'com.example.app', type: 'input', status: d.device_count > 0 ? 'ok' : 'inactive', required: true, probe: 'adb_devices' },
+        { x: W*0.26, y: cy, label: 'ADB Shell', sub: 'dumpsys + pm', type: 'process', status: d.adb_ok ? 'ok' : 'error', required: true, probe: 'adb_server' },
+        { x: W*0.44, y: cy, label: 'audit_ipc.sh', sub: 'Script analyse', type: 'process', status: 'ok', required: true },
+        { x: W*0.62, y: cy, label: 'IPC Scanner', sub: 'Activity/Service/BR/CP', type: 'process', status: 'ok', required: true },
+        { x: W*0.82, y: cy, label: 'Audit Report', sub: d.report_count + ' fichier(s)', type: 'output', status: d.report_count > 0 ? 'ok' : 'inactive', required: true },
     ];
 
-    // IPC component detail nodes
+    // Optional: Frida for runtime hooks
+    const fridaNode = { x: W*0.82, y: cy - 100, label: 'Frida (Runtime)', sub: d.frida_active ? 'Actif' : 'Inactif', type: 'process', status: d.frida_active ? 'ok' : 'inactive', required: false, probe: 'frida_server' };
+
     const ipcTypes = [
-        { x: W*0.32, y: cy + 90, label: 'Activities', icon: 'exported' },
-        { x: W*0.46, y: cy + 90, label: 'Services', icon: 'bound/started' },
-        { x: W*0.60, y: cy + 90, label: 'Broadcast Recv', icon: 'intent-filter' },
-        { x: W*0.74, y: cy + 90, label: 'Content Prov', icon: 'URI exposed' },
+        { x: W*0.30, y: cy + 100, label: 'Activities', icon: 'exported' },
+        { x: W*0.46, y: cy + 100, label: 'Services', icon: 'bound/started' },
+        { x: W*0.62, y: cy + 100, label: 'Broadcast Recv', icon: 'intent-filter' },
+        { x: W*0.78, y: cy + 100, label: 'Content Prov', icon: 'URI exposed' },
     ];
 
-    // Main arrows
     const labels = ['adb -s <serial>', 'Shell exec', 'Parse manifest', 'Generate'];
     for (let i = 0; i < nodes.length - 1; i++) {
-        const fromOk = nodes[i].status !== 'inactive';
-        const toOk = nodes[i+1].status !== 'inactive';
+        const fromOk = nodes[i].status !== 'inactive' && nodes[i].status !== 'error';
+        const toOk = nodes[i+1].status !== 'inactive' && nodes[i+1].status !== 'error';
         drawCartoArrow(ctx, nodes[i].x + nw/2, nodes[i].y, nodes[i+1].x - nw/2, nodes[i+1].y, labels[i],
             (fromOk && toOk) ? 'active' : 'inactive');
     }
 
-    // IPC detail arrows and boxes
+    // Frida link
+    drawCartoArrow(ctx, fridaNode.x, fridaNode.y + nh/2, nodes[4].x, nodes[4].y - nh/2, 'Runtime hooks', d.frida_active ? 'success' : 'inactive');
+
     for (const ipc of ipcTypes) {
         drawCartoArrow(ctx, nodes[3].x, nodes[3].y + nh/2, ipc.x, ipc.y - 22, '', 'active');
         ctx.beginPath();
@@ -1038,12 +1160,17 @@ function drawBP4() {
         ctx.fillText(ipc.icon, ipc.x, ipc.y + 10);
     }
 
-    // Main nodes
+    // Frida optional node
+    const fridaProbe = p['frida_server'] || {};
+    drawCartoNode(ctx, fridaNode.x, fridaNode.y, nw, nh, fridaNode.label, fridaNode.sub, fridaNode.type, fridaNode.status === 'ok' ? null : fridaNode.status, { required: false, latency_ms: fridaProbe.latency_ms });
+
     for (const n of nodes) {
-        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status);
+        const probeInfo = n.probe && p[n.probe] ? p[n.probe] : {};
+        drawCartoNode(ctx, n.x, n.y, nw, nh, n.label, n.sub, n.type, n.status === 'ok' ? null : n.status, {
+            required: n.required, latency_ms: probeInfo.latency_ms,
+        });
     }
 
-    // Error badge
     drawCartoWarningBadge(ctx, nodes[4].x + nw/2 - 4, nodes[4].y - nh/2 - 4, d.recent_errors);
 
     const el = document.getElementById('bp4-status');

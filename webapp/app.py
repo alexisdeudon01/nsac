@@ -656,40 +656,213 @@ def get_topology():
 
 
 # =====================================================
+# API - Probes (Entity health + auth testing)
+# =====================================================
+
+# Entity definitions: mandatory vs optional per business process
+ENTITY_DEFINITIONS = {
+    "nsac_host": {"label": "NSAC Host", "required": True, "category": "infrastructure"},
+    "docker_engine": {"label": "Docker Engine", "required": True, "category": "infrastructure"},
+    "network_iface": {"label": "Network Interface", "required": True, "category": "infrastructure"},
+    "ip_forwarding": {"label": "IP Forwarding", "required": True, "category": "infrastructure"},
+    "iptables": {"label": "iptables NAT", "required": True, "category": "network"},
+    "mitmproxy": {"label": "Mitmproxy", "required": True, "category": "container"},
+    "mitmproxy_web": {"label": "Mitmproxy Web API", "required": True, "category": "service"},
+    "mobsf": {"label": "MobSF", "required": True, "category": "container"},
+    "mobsf_api": {"label": "MobSF REST API", "required": True, "category": "service"},
+    "wifi_ap": {"label": "WiFi Access Point", "required": False, "category": "network"},
+    "adb_server": {"label": "ADB Server", "required": False, "category": "tool"},
+    "adb_devices": {"label": "ADB Devices", "required": False, "category": "device"},
+    "frida_server": {"label": "Frida Server", "required": False, "category": "tool"},
+    "frida_injection": {"label": "Frida Injection", "required": False, "category": "tool"},
+}
+
+_probes_cache = {"data": None, "ts": 0}
+
+
+def run_probe(name, cmd, timeout=3):
+    """Run a single probe and return status + latency."""
+    t0 = time.time()
+    stdout, stderr, code = run_cmd(cmd, timeout=timeout)
+    latency = round((time.time() - t0) * 1000)
+    return {
+        "status": "ok" if code == 0 else "error",
+        "latency_ms": latency,
+        "stdout": stdout[:200] if stdout else "",
+        "stderr": stderr[:200] if stderr else "",
+        "code": code,
+    }
+
+
+def run_all_probes():
+    """Run all entity probes and return results."""
+    results = {}
+
+    # 1. NSAC Host
+    r = run_probe("nsac_host", "hostname && uname -r")
+    r["detail"] = r["stdout"].replace("\n", " / ")
+    results["nsac_host"] = r
+
+    # 2. Docker Engine
+    r = run_probe("docker_engine", "docker info --format '{{.ServerVersion}}' 2>/dev/null")
+    r["detail"] = f"v{r['stdout']}" if r["status"] == "ok" else "Docker non disponible"
+    results["docker_engine"] = r
+
+    # 3. Network Interface
+    r = run_probe("network_iface", "ip -4 addr show scope global | head -4")
+    ifaces = [l.strip() for l in r["stdout"].splitlines() if "inet " in l]
+    r["detail"] = ifaces[0] if ifaces else r["stdout"][:80]
+    results["network_iface"] = r
+
+    # 4. IP Forwarding
+    r = run_probe("ip_forwarding", "cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo '0'")
+    fwd = r["stdout"].strip() == "1"
+    r["status"] = "ok" if fwd else "warning"
+    r["detail"] = "ip_forward=1" if fwd else "ip_forward=0 (desactive)"
+    results["ip_forwarding"] = r
+
+    # 5. iptables NAT
+    r = run_probe("iptables", "iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c REDIRECT || echo '0'")
+    rules = int(r["stdout"].strip()) if r["stdout"].strip().isdigit() else 0
+    r["status"] = "ok" if state["transparent_proxy"] and rules > 0 else ("warning" if rules == 0 else "ok")
+    r["detail"] = f"{rules} regle(s) REDIRECT" if rules > 0 else "Aucune regle NAT"
+    results["iptables"] = r
+
+    # 6. WiFi AP
+    r = run_probe("wifi_ap", "iwconfig 2>/dev/null | head -3")
+    has_wifi = "no wireless" not in (r["stdout"] + r["stderr"]).lower() and r["stdout"].strip() != ""
+    r["status"] = "ok" if has_wifi else "inactive"
+    r["detail"] = r["stdout"].split("\n")[0][:60] if has_wifi else "Aucune interface WiFi"
+    results["wifi_ap"] = r
+
+    # 7. Mitmproxy container
+    r = run_probe("mitmproxy", "docker inspect mitmproxy --format '{{.State.Status}}' 2>/dev/null || echo 'not found'")
+    running = r["stdout"].strip() == "running"
+    r["status"] = "ok" if running else "error"
+    r["detail"] = f"Container: {r['stdout'].strip()}"
+    results["mitmproxy"] = r
+
+    # 8. Mitmproxy Web API (auth test)
+    r = run_probe("mitmproxy_web", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ 2>/dev/null || echo '000'")
+    http_code = r["stdout"].strip()
+    r["status"] = "ok" if http_code in ("200", "304") else ("warning" if http_code == "403" else "error")
+    r["detail"] = f"HTTP {http_code}" + (" - OK" if r["status"] == "ok" else " - Auth/connexion echouee" if http_code == "403" else " - Non accessible")
+    r["auth"] = "ok" if r["status"] == "ok" else "failed"
+    results["mitmproxy_web"] = r
+
+    # 9. MobSF container
+    r = run_probe("mobsf", "docker inspect mobsf --format '{{.State.Status}}' 2>/dev/null || echo 'not found'")
+    running = r["stdout"].strip() == "running"
+    r["status"] = "ok" if running else "error"
+    r["detail"] = f"Container: {r['stdout'].strip()}"
+    results["mobsf"] = r
+
+    # 10. MobSF REST API (auth test)
+    r = run_probe("mobsf_api", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/api/v1/scans -H 'Authorization:__mobsf_api_key__' 2>/dev/null || echo '000'")
+    http_code = r["stdout"].strip()
+    r["status"] = "ok" if http_code in ("200", "201") else ("warning" if http_code in ("401", "403") else "error")
+    r["detail"] = f"HTTP {http_code}" + (" - API OK" if r["status"] == "ok" else " - Auth echouee (verifier API key)" if http_code in ("401", "403") else " - Non accessible")
+    r["auth"] = "ok" if r["status"] == "ok" else ("auth_failed" if http_code in ("401", "403") else "unreachable")
+    results["mobsf_api"] = r
+
+    # 11. ADB Server
+    r = run_probe("adb_server", "adb version 2>/dev/null | head -1")
+    r["detail"] = r["stdout"][:60] if r["status"] == "ok" else "ADB non installe"
+    results["adb_server"] = r
+
+    # 12. ADB Devices
+    r = run_probe("adb_devices", "adb devices 2>/dev/null | grep -c 'device$' || echo '0'")
+    count = int(r["stdout"].strip()) if r["stdout"].strip().isdigit() else 0
+    r["status"] = "ok" if count > 0 else "inactive"
+    r["detail"] = f"{count} appareil(s) connecte(s)"
+    results["adb_devices"] = r
+
+    # 13. Frida Server
+    r = run_probe("frida_server", "which frida 2>/dev/null && frida --version 2>/dev/null || echo 'not found'")
+    has_frida = "not found" not in r["stdout"] and r["status"] == "ok"
+    r["status"] = "ok" if has_frida else "inactive"
+    r["detail"] = f"Frida {r['stdout'].splitlines()[-1]}" if has_frida else "Frida non installe"
+    results["frida_server"] = r
+
+    # 14. Frida Injection
+    r["status"] = "ok" if state["frida_active"] else "inactive"
+    results["frida_injection"] = {
+        "status": "ok" if state["frida_active"] else "inactive",
+        "latency_ms": 0,
+        "detail": "Injection active" if state["frida_active"] else "Aucune injection en cours",
+        "code": 0,
+    }
+
+    # Test inter-process communication
+    comms = []
+    if results["mitmproxy"]["status"] == "ok" and results["mitmproxy_web"]["status"] == "ok":
+        comms.append({"from": "nsac_host", "to": "mitmproxy_web", "status": "ok", "label": "REST :8081"})
+    else:
+        comms.append({"from": "nsac_host", "to": "mitmproxy_web", "status": "error", "label": "REST :8081"})
+
+    if results["mobsf"]["status"] == "ok" and results["mobsf_api"]["status"] == "ok":
+        comms.append({"from": "nsac_host", "to": "mobsf_api", "status": "ok", "label": "REST :8000"})
+    else:
+        comms.append({"from": "nsac_host", "to": "mobsf_api", "status": "error", "label": "REST :8000"})
+
+    if results["mitmproxy"]["status"] == "ok" and results["mobsf"]["status"] == "ok":
+        comms.append({"from": "mitmproxy", "to": "mobsf", "status": "ok", "label": "Traffic data"})
+    else:
+        comms.append({"from": "mitmproxy", "to": "mobsf", "status": "inactive", "label": "Traffic data"})
+
+    if results["adb_devices"]["status"] == "ok":
+        comms.append({"from": "adb_server", "to": "adb_devices", "status": "ok", "label": "USB/TCP"})
+    else:
+        comms.append({"from": "adb_server", "to": "adb_devices", "status": "inactive", "label": "USB/TCP"})
+
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "entities": {
+            name: {
+                **ENTITY_DEFINITIONS[name],
+                **results.get(name, {"status": "unknown", "latency_ms": 0, "detail": "Non teste"}),
+            }
+            for name in ENTITY_DEFINITIONS
+        },
+        "communications": comms,
+    }
+
+
+@app.route("/api/probes", methods=["GET"])
+def get_probes():
+    """Run all probes and return entity health data."""
+    now = time.time()
+    # Cache for 3 seconds to avoid hammering
+    if _probes_cache["data"] and (now - _probes_cache["ts"]) < 3:
+        return jsonify(_probes_cache["data"])
+
+    data = run_all_probes()
+    _probes_cache["data"] = data
+    _probes_cache["ts"] = now
+
+    # Log errors and warnings
+    for name, entity in data["entities"].items():
+        if entity["status"] == "error" and ENTITY_DEFINITIONS[name]["required"]:
+            log_event("error", f"Probe {entity['label']}: {entity.get('detail', 'echec')}")
+        elif entity["status"] == "warning":
+            log_event("warn", f"Probe {entity['label']}: {entity.get('detail', 'warning')}")
+
+    return jsonify(data)
+
+
+# =====================================================
 # API - Cartography (Business Process Maps)
 # =====================================================
 
 
 @app.route("/api/cartography", methods=["GET"])
 def get_cartography():
-    """Get live data for all business process maps."""
-    # Get container statuses
-    stdout, _, _ = run_cmd("docker ps -a --format '{{json .}}'")
-    containers = []
-    for line in stdout.splitlines():
-        if line.strip():
-            try:
-                containers.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
+    """Get live data for all business process maps, powered by probes."""
+    # Re-use probes data
+    probes = run_all_probes()
+    entities = probes["entities"]
 
-    mitm_container = next((c for c in containers if "mitmproxy" in (c.get("Names") or "")), None)
-    mitm_running = mitm_container and mitm_container.get("State") == "running"
-    mitm_has_error = state["container_errors"].get("mitmproxy", False)
-
-    mobsf_container = next((c for c in containers if "mobsf" in (c.get("Names") or "")), None)
-    mobsf_running = mobsf_container and mobsf_container.get("State") == "running"
-    mobsf_has_error = state["container_errors"].get("mobsf", False)
-
-    # IP forwarding
-    fwd_stdout, _, _ = run_cmd("cat /proc/sys/net/ipv4/ip_forward 2>/dev/null || echo '0'")
-    ip_forward = fwd_stdout.strip() == "1"
-
-    # WiFi status
-    iface_stdout, _, _ = run_cmd("iwconfig 2>/dev/null | head -3 || echo 'no wifi'")
-    wifi_ok = "no wifi" not in (iface_stdout or "")
-
-    # Mitmproxy flow count
+    # Extra data: flow count
     flow_count = 0
     intercepted_hosts = []
     flow_stdout, _, flow_code = run_cmd(
@@ -704,21 +877,14 @@ def get_cartography():
             pass
         intercepted_hosts = [h for h in lines[1:] if h]
 
-    # Device info
-    devices = state["connected_devices"]
-    device_count = len(devices)
-
-    # Reports count
+    device_count = len(state["connected_devices"])
     report_count = 0
     if REPORTS_DIR.exists():
         for pkg_dir in REPORTS_DIR.iterdir():
             if pkg_dir.is_dir() and pkg_dir.name != "screenshots":
                 report_count += len(list(pkg_dir.iterdir()))
 
-    # Recent errors from logs
-    recent_errors = [
-        l for l in state["logs"][-50:] if l.get("level") == "error"
-    ]
+    recent_errors = sum(1 for l in state["logs"][-50:] if l.get("level") == "error")
     container_warnings = {}
     for name, logs in state["container_logs"].items():
         warns = sum(1 for l in logs[-50:] if l.get("level") in ("warn", "error"))
@@ -726,38 +892,45 @@ def get_cartography():
             container_warnings[name] = warns
 
     return jsonify({
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": probes["timestamp"],
+        "probes": entities,
+        "communications": probes["communications"],
         "bp1_network": {
-            "wifi_ok": wifi_ok,
-            "wifi_info": iface_stdout.split("\n")[0] if iface_stdout else "N/A",
-            "ip_forward": ip_forward,
+            "wifi_ok": entities["wifi_ap"]["status"] == "ok",
+            "wifi_info": entities["wifi_ap"].get("detail", "N/A"),
+            "ip_forward": entities["ip_forwarding"]["status"] == "ok",
             "iptables_active": state["transparent_proxy"],
-            "mitmproxy_running": mitm_running,
-            "mitmproxy_error": mitm_has_error,
+            "mitmproxy_running": entities["mitmproxy"]["status"] == "ok",
+            "mitmproxy_error": entities["mitmproxy"]["status"] == "error",
+            "mitmproxy_auth": entities["mitmproxy_web"].get("auth", "unknown"),
             "flow_count": flow_count,
             "intercepted_hosts": intercepted_hosts[:10],
             "device_count": device_count,
-            "devices": [{"serial": d["serial"], "model": d.get("model", d["serial"]), "state": d.get("state", "?")} for d in devices],
+            "devices": [{"serial": d["serial"], "model": d.get("model", d["serial"]), "state": d.get("state", "?")} for d in state["connected_devices"]],
         },
         "bp2_mobsf": {
-            "mobsf_running": mobsf_running,
-            "mobsf_error": mobsf_has_error,
+            "mobsf_running": entities["mobsf"]["status"] == "ok",
+            "mobsf_error": entities["mobsf"]["status"] == "error",
+            "mobsf_auth": entities["mobsf_api"].get("auth", "unknown"),
             "report_count": report_count,
-            "mitmproxy_running": mitm_running,
+            "mitmproxy_running": entities["mitmproxy"]["status"] == "ok",
             "warnings": container_warnings.get("mobsf", 0),
         },
         "bp3_frida": {
             "frida_active": state["frida_active"],
+            "frida_installed": entities["frida_server"]["status"] == "ok",
             "device_count": device_count,
-            "devices": [{"serial": d["serial"], "model": d.get("model", d["serial"])} for d in devices],
-            "mitmproxy_running": mitm_running,
+            "devices": [{"serial": d["serial"], "model": d.get("model", d["serial"])} for d in state["connected_devices"]],
+            "mitmproxy_running": entities["mitmproxy"]["status"] == "ok",
             "flow_count": flow_count,
+            "adb_ok": entities["adb_server"]["status"] == "ok",
         },
         "bp4_audit": {
             "device_count": device_count,
             "report_count": report_count,
             "frida_active": state["frida_active"],
-            "recent_errors": len(recent_errors),
+            "recent_errors": recent_errors,
+            "adb_ok": entities["adb_server"]["status"] == "ok",
         },
     })
 
