@@ -1,0 +1,16 @@
+{
+  "listen_host": "0.0.0.0",
+  "listen_port": 8080,
+  "web_host": "0.0.0.0",
+  "web_port": 8081,
+  "web_open_browser": false,
+  "web_password": "nsac",
+  "ssl_insecure": false,
+  "upstream_cert": true,
+  "stream_large_bodies": "5m",
+  "connection_strategy": "lazy",
+  "http2": true,
+  "anticache": false,
+  "anticomp": false,
+  "showhost": true
+}
