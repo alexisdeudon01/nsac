@@ -17,7 +17,7 @@ from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "nsac-audit-console-secret"
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", manage_session=False)
 
 # --- Configuration ---
 BASE_DIR = Path(__file__).parent.parent
@@ -25,6 +25,8 @@ REPORTS_DIR = BASE_DIR / "reports"
 SCRIPTS_DIR = BASE_DIR
 MITMPROXY_CONFIG = BASE_DIR / "mitmproxy" / "config.json"
 REPORTS_DIR.mkdir(exist_ok=True)
+MITMPROXY_TOKEN = "nsac"
+MITMPROXY_API = f"http://127.0.0.1:8081"
 
 # Etat global
 state = {
@@ -389,7 +391,7 @@ def network_status():
 def get_interceptions():
     """Get intercepted devices/hosts from mitmproxy."""
     # Try to get flow data from mitmproxy API
-    stdout, _, code = run_cmd("curl -s http://127.0.0.1:8081/flows.json 2>/dev/null", timeout=5)
+    stdout, _, code = run_cmd(f"curl -s '{MITMPROXY_API}/flows.json?token={MITMPROXY_TOKEN}' 2>/dev/null", timeout=5)
     devices = {}
     if code == 0 and stdout:
         try:
@@ -506,6 +508,7 @@ def get_default_mitmproxy_config():
         "anticache": False,
         "anticomp": True,
         "showhost": True,
+        "web_token": "nsac",
     }
 
 
@@ -624,7 +627,7 @@ def get_topology():
 
     # Intercepted devices
     interception_stdout, _, interception_code = run_cmd(
-        "curl -s http://127.0.0.1:8081/flows.json 2>/dev/null | head -c 50000", timeout=3
+        f"curl -s '{MITMPROXY_API}/flows.json?token={MITMPROXY_TOKEN}' 2>/dev/null | head -c 50000", timeout=3
     )
     intercepted_ips = set()
     if interception_code == 0 and interception_stdout:
@@ -743,7 +746,7 @@ def run_all_probes():
     results["mitmproxy"] = r
 
     # 8. Mitmproxy Web API (auth test)
-    r = run_probe("mitmproxy_web", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ 2>/dev/null || echo '000'")
+    r = run_probe("mitmproxy_web", f"curl -s -o /dev/null -w '%{{http_code}}' '{MITMPROXY_API}/?token={MITMPROXY_TOKEN}' 2>/dev/null || echo '000'")
     http_code = r["stdout"].strip()
     r["status"] = "ok" if http_code in ("200", "304") else ("warning" if http_code == "403" else "error")
     r["detail"] = f"HTTP {http_code}" + (" - OK" if r["status"] == "ok" else " - Auth/connexion echouee" if http_code == "403" else " - Non accessible")
@@ -866,7 +869,7 @@ def get_cartography():
     flow_count = 0
     intercepted_hosts = []
     flow_stdout, _, flow_code = run_cmd(
-        "curl -s http://127.0.0.1:8081/flows.json 2>/dev/null | python3 -c \"import sys,json;flows=json.load(sys.stdin);print(len(flows));print('\\n'.join(set(f.get('request',{}).get('host','') for f in flows[-20:])))\" 2>/dev/null",
+        f"curl -s '{MITMPROXY_API}/flows.json?token={MITMPROXY_TOKEN}' 2>/dev/null | python3 -c \"import sys,json;flows=json.load(sys.stdin);print(len(flows));print('\\n'.join(set(f.get('request',{{}}).get('host','') for f in flows[-20:])))\" 2>/dev/null",
         timeout=3,
     )
     if flow_code == 0 and flow_stdout:

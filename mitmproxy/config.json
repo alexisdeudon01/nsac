@@ -11,5 +11,6 @@
   "http2": true,
   "anticache": false,
   "anticomp": false,
-  "showhost": true
+  "showhost": true,
+  "web_token": "nsac"
 }

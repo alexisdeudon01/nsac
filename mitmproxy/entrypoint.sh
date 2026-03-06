@@ -29,7 +29,7 @@ if 'web_port' in cfg:
 set_keys = [
     'web_open_browser', 'ssl_insecure', 'upstream_cert',
     'stream_large_bodies', 'connection_strategy', 'http2',
-    'anticache', 'anticomp', 'showhost'
+    'anticache', 'anticomp', 'showhost', 'web_token'
 ]
 for key in set_keys:
     if key in cfg:
