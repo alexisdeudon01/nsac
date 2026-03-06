@@ -493,12 +493,14 @@ function drawTopology() {
 
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    const rw = rect.width > 0 ? rect.width : parseInt(canvas.getAttribute('width')) || 1200;
+    const rh = rect.height > 0 ? rect.height : parseInt(canvas.getAttribute('height')) || 550;
+    canvas.width = rw * dpr;
+    canvas.height = rh * dpr;
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
-    const W = rect.width;
-    const H = rect.height;
+    const W = rw;
+    const H = rh;
 
     // Clear
     ctx.fillStyle = '#0a0e17';
@@ -768,13 +770,15 @@ function initCartoCanvas(canvasId) {
     if (!canvas) return null;
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
+    const rw = rect.width > 0 ? rect.width : parseInt(canvas.getAttribute('width')) || 1200;
+    const rh = rect.height > 0 ? rect.height : parseInt(canvas.getAttribute('height')) || 380;
+    canvas.width = rw * dpr;
+    canvas.height = rh * dpr;
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
     ctx.fillStyle = '#080c14';
-    ctx.fillRect(0, 0, rect.width, rect.height);
-    return { ctx, W: rect.width, H: rect.height };
+    ctx.fillRect(0, 0, rw, rh);
+    return { ctx, W: rw, H: rh };
 }
 
 const CARTO_COLORS = {

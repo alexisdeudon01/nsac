@@ -16,7 +16,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.urandom(24).hex()
+app.config["SECRET_KEY"] = "nsac-audit-console-secret"
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- Configuration ---
