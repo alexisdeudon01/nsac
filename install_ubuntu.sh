@@ -70,13 +70,36 @@ if ! groups "$REAL_USER" | grep -q docker; then
 fi
 
 # --- 3. Environnement Python virtuel ---
-log_info "Creation de l'environnement Python..."
 VENV_DIR="$INSTALL_DIR/.venv"
-if [[ ! -d "$VENV_DIR" ]]; then
-    python3 -m venv "$VENV_DIR"
+REQ_FILE="$INSTALL_DIR/webapp/requirements.txt"
+
+if [[ -d "$VENV_DIR" ]]; then
+    log_warn "Suppression de l'ancien environnement virtuel..."
+    rm -rf "$VENV_DIR"
 fi
+
+log_info "Creation de l'environnement virtuel Python..."
+python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install --upgrade pip -q
-"$VENV_DIR/bin/pip" install -q -r "$INSTALL_DIR/webapp/requirements.txt"
+
+log_info "Installation des librairies depuis requirements.txt..."
+"$VENV_DIR/bin/pip" install -q -r "$REQ_FILE"
+
+# Verification des librairies
+log_info "Verification des librairies Python..."
+MISSING_LIBS=()
+while IFS= read -r line; do
+    [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
+    pkg_name=$(echo "$line" | sed 's/[>=<].*//')
+    if ! "$VENV_DIR/bin/pip" show "$pkg_name" &>/dev/null; then
+        MISSING_LIBS+=("$pkg_name")
+    fi
+done < "$REQ_FILE"
+if [[ ${#MISSING_LIBS[@]} -gt 0 ]]; then
+    log_error "Librairies manquantes apres installation : ${MISSING_LIBS[*]}"
+    exit 1
+fi
+log_info "Toutes les librairies Python sont installees."
 
 # --- 4. Frida tools ---
 log_info "Installation de frida-tools (peut prendre quelques minutes)..."

@@ -34,67 +34,20 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# --- Verification des dependances systeme ---
+# --- Verification des dependances ---
 check_deps() {
     local missing=()
-    for cmd in docker iw iptables openssl python3; do
+    for cmd in docker iw iptables openssl; do
         if ! command -v "$cmd" &>/dev/null; then
             missing+=("$cmd")
         fi
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
-        log_error "Dependances systeme manquantes : ${missing[*]}"
+        log_error "Dependances manquantes : ${missing[*]}"
         exit 1
     fi
 }
 check_deps
-
-# --- Verification de l'environnement Python ---
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_DIR="$SCRIPT_DIR/.venv"
-REQ_FILE="$SCRIPT_DIR/webapp/requirements.txt"
-
-setup_python_env() {
-    if [[ ! -f "$REQ_FILE" ]]; then
-        log_error "Fichier requirements.txt introuvable ($REQ_FILE)."
-        exit 1
-    fi
-
-    # Detruire et recreer le venv pour un etat propre
-    if [[ -d "$VENV_DIR" ]]; then
-        log_warn "Suppression de l'ancien environnement virtuel..."
-        rm -rf "$VENV_DIR"
-    fi
-
-    log_info "Creation de l'environnement virtuel Python..."
-    python3 -m venv "$VENV_DIR"
-    "$VENV_DIR/bin/pip" install --upgrade pip -q
-
-    log_info "Installation des librairies depuis requirements.txt..."
-    "$VENV_DIR/bin/pip" install -q -r "$REQ_FILE"
-
-    # Verification
-    log_info "Verification des librairies Python..."
-    local missing_libs=()
-    while IFS= read -r line; do
-        [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-        pkg_name=$(echo "$line" | sed 's/[>=<].*//')
-        if ! "$VENV_DIR/bin/pip" show "$pkg_name" &>/dev/null; then
-            missing_libs+=("$pkg_name")
-        fi
-    done < "$REQ_FILE"
-    if [[ ${#missing_libs[@]} -gt 0 ]]; then
-        log_error "Librairies manquantes apres installation : ${missing_libs[*]}"
-        exit 1
-    fi
-    log_info "Toutes les librairies Python sont installees."
-
-    # Fixer les permissions si lance en sudo
-    if [[ -n "${SUDO_USER:-}" ]]; then
-        chown -R "$SUDO_USER:$SUDO_USER" "$VENV_DIR"
-    fi
-}
-setup_python_env
 
 # --- Parsing des arguments ---
 ENABLE_MONITOR=false
